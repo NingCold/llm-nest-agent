@@ -1,10 +1,8 @@
-# 09 运行时与配置
+# 运行时与配置
 
-[总纲](overview.md) · [AI 执行](05-ai-execution.md) · [存储与迁移](06-storage-and-migration.md)
+[总纲](overview.md) · [AI 执行](execution.md) · [存储与迁移](storage.md)
 
-本文维护所属模块的规则与扩展目标。 实施状态见 [已完成](completed.md) / [尚未完成](pending.md)，当前调用契约见 [API 与事件](07-api-and-events.md)。
-
-## 1. Runtime 的职责
+## Runtime 的职责
 
 Runtime 保持共享宿主，负责配置快照、资源注入、Feature 生命周期和关闭。SocialFeature 实现身份、聊天、意识系统（Consciousness）、参与与调度用例；Runtime 不堆积前端专用的业务条件。ConsciousnessService 由 SocialFeature 创建和持有，使用注入的同一 SocialStore、AiClient、Clock 与预算资源，不成为独立 Runtime 或 Feature。
 
@@ -14,7 +12,7 @@ FeatureContext 必需注入 AiClient 与 SocialResources（SocialStore/Clock）�
 
 Feature trait 维持生命周期与 Arc downcast；SocialFeature 的 create_ai、send_message、forget_memory 等作为具体方法暴露。Runtime 注册 Feature 时只依赖 trait，不能反向依赖 `social-feature` Cargo 包。
 
-## 2. 启动顺序
+## 启动顺序
 
 1. 所有宿主先处理 `--llmn-tool-worker`，在配置、Key、日志、UI 和存储初始化前退出 worker 路径。
 2. 准备实际数据目录，按原规则处理旧默认目录复制，解析并冻结 config/data 路径。
@@ -26,9 +24,9 @@ Feature trait 维持生命周期与 Arc downcast；SocialFeature 的 create_ai�
 
 空文件、仅注释或空 providers 都是有效首次启动状态：可以配置联系人和设置，无法执行 AI。省略 providers 反序列化为空集合，非法语法或类型仍报错，不在解析失败时伪造配置。当前社交私聊已经把真人消息保存与模型可用性分开。
 
-桌面 Runtime 嵌入应用进程，由首次 IPC 初始化请求启动，无需单独启动 Web Server。窗口先展示空白启动层，初始化成功或报错后显示界面；启动失败与订阅重连分别提示，保留具体错误、重试与设置入口。实现与本机验证见 [桌面启动记录](m1-desktop-surface.md)。
+桌面 Runtime 嵌入应用进程，由首次 IPC 初始化请求启动，无需单独启动 Web Server。窗口先展示空白启动层，初始化成功或报错后显示界面；启动失败与订阅重连分别提示，保留具体错误、重试与设置入口。环境与验证见[验证入口](../validation/README.md)。
 
-## 3. 配置分工
+## 配置分工
 
 | 内容 | 权威位置 | 修改边界 |
 | --- | --- | --- |
@@ -46,7 +44,7 @@ GUI 的实际操作者固定为后端的本地真人。账号查看只传被查�
 
 思考强度、模型名和 provider 继续严格校验。ExecutionBinding 是中立描述，运行时转换为 ai-client::ModelSelection 与 GenerationOptions；协议差异不进入社交业务层。
 
-## 4. 快照与热更新
+## 快照与热更新
 
 一次 run 固定 provider 配置、目录、协议路由和内部设定快照，并记录档案、绑定和上下文版本。档案/绑定版本在启动事务复核；普通设定或模型修改不使已开始运行失效，最终提交仍检查消息来源与参与状态。热更新整体校验成功后发布新版本，失败保留原版本；在飞请求继续原模型配置。
 
@@ -58,13 +56,13 @@ GUI 的实际操作者固定为后端的本地真人。账号查看只传被查�
 
 目录同步仍使用 Pi 公共目录适配、Runtime 校验、原子缓存和用户字段优先级。所有配置重建路径合并缓存；不重写源码/整份配置、不导入远端凭据和端点、不改变默认模型。
 
-模型图片能力为支持/不支持/未知，按精确 provider/model 采用人工 image_input > 同步目录 > 内置声明 > 未知。目录的输入模态缺失时不推断为不支持；同步覆盖放在内部 catalog_image_input，不序列化成人工配置。Runtime::set_model_image_input 持有配置更新锁，解析当前模型、定点修改 TOML、整体校验、原子保存后再发布；null 只移除人工字段。既有 run 的 AiClient 快照不会改变，新运行在分发前检查实际图片。配置与接口见[图片能力记录](image-capabilities.md)。
+模型图片能力为支持/不支持/未知，按精确 provider/model 采用人工 image_input > 同步目录 > 内置声明 > 未知。目录的输入模态缺失时不推断为不支持；同步覆盖放在内部 catalog_image_input，不序列化成人工配置。Runtime::set_model_image_input 持有配置更新锁，解析当前模型、定点修改 TOML、整体校验、原子保存后再发布；null 只移除人工字段。既有 run 的 AiClient 快照不会改变，新运行在分发前检查实际图片。
 
-## 5. 生命周期与关闭
+## 生命周期与关闭
 
 当前 SocialFeature.initialize 恢复运行并继续持久 queued 计划、Bout 与有效约定调度；重复初始化不能产生多个调度器。Clock 与 mock provider 可注入，业务代码不自行创建真实凭据或新的独立 Runtime。
 
-M1 初始化意识系统基本上下文服务；M2 第二批已接入按窗口显式启用的摘要任务，后续提取/巩固不因初始化自动启用。后台任务使用明确模型绑定与独立调用预算，摘要并发为 1，每次唤醒最多 4 段、单次 120 秒；没有配置或输入预算不足时显示可恢复状态，不隐式调用另一个付费模型。
+SocialFeature 初始化意识系统，并管理按窗口显式启用的摘要任务；自动提取和巩固尚未实现。后台任务使用明确模型绑定与独立调用预算，摘要并发为 1，每次唤醒最多 4 段、单次 120 秒；没有配置或输入预算不足时显示可恢复状态，不隐式调用另一个付费模型。
 
 shutdown 顺序：停止接受新执行 → 停止参与调度和意识后台任务领取 → 取消活动运行与后台任务 → 等待中断保存与工具退出 → 刷新状态并释放事件资源 → 关闭数据库 → 释放目录锁。摘要未完成时可以依据来源重新评估，不能在重启时无条件重放已 dispatch 的外部调用；新任务仍受预算与版本约束。
 
@@ -74,23 +72,14 @@ shutdown 顺序：停止接受新执行 → 停止参与调度和意识后台任
 
 当前 Tauri 主窗口关闭先向已注册前端请求草稿保存确认，最多等 10 秒；前端冻结编辑、等待正在读取的图片和 IndexedDB 事务完成，失败保留窗口与可用后端。匹配当前页面和关闭请求的成功确认后，才实现上述收尾：停止接收新命令、释放并等待 IPC 订阅任务、等待已经开始的初始化、调用 Runtime::shutdown_features（含 writer 排空），成功才退出。20 秒超时或保存失败通过 backend-shutdown-failed 提示并保留窗口，允许再次关闭重试；不创建后台常驻服务。
 
-## 6. 旧版退役与历史边界
+## 历史数据边界
 
-旧 CLI/TUI、ChatFeature、SessionManager、JSON 写存储、旧 HTTP/chat-event 和全局生成设置已移除。Web 与桌面只走 SocialFeature。
+Web 与桌面都通过 SocialFeature 读写当前社交数据。历史数据只经显式导入进入只读窗口。
 
 历史 JSON DTO 独立在 `storage::legacy`，导入通过 SocialFeature → SocialStore 执行；复用数据目录锁和 writer，不接受任意路径或客户端操作者。设置页提供显式所选导入，重复导入幂等，失败不改原文件，导入结果在新版只读查看。
 
-## 7. 可观测性
+## 可观测性
 
 日志记录事件、ActorId、ConversationId、RunId、状态、错误分类和用量，默认不记录正文、记忆、完整请求、环境变量值或凭据。调试请求正文需要用户明确开启且限定保存范围。
 
 错误提示引用实际冻结路径与可恢复动作，但不把私人配置或目录内容发送远端。日志和调度统计是运行证据，不能代替持久消息或声称完整任务审计已实现。
-
-## 8. 验收
-
-1. worker 入口仍早于配置与存储初始化，所有宿主均覆盖。
-2. 初始化失败能重试，重试不创建重复调度器或漏释放目录锁。
-3. 热更新与 run 并发时模型路由一致，撤销状态仍及时生效。
-4. 空配置、失效绑定、目录缓存失败与 provider 移除有明确状态。
-5. 正常关闭、强制终止、磁盘失败后的恢复行为可复现。
-6. 旧 HTTP 返回 404、旧 IPC 未注册，旧查询参数仍进入新版；桌面不回退到 HTTP 或模拟模式。

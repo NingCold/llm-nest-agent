@@ -1,9 +1,9 @@
-use crate::{SocialError, consciousness::ConsciousnessService};
+use crate::{AgentError, consciousness::ConsciousnessService};
+use crate::{ContactInput, ContextInput};
 use ai_client::{ModelSpec, Protocol};
 use social::*;
-use storage::social::{ContactRecord, ContextMaterial};
 
-fn fixture() -> (ContextMaterial, ModelSpec) {
+fn fixture() -> (ContextInput, ModelSpec) {
     let human = ActorId::new();
     let ai = ActorId::new();
     let id = ConversationId::new();
@@ -17,7 +17,7 @@ fn fixture() -> (ContextMaterial, ModelSpec) {
         revision: Revision::ONE,
         created_at: "2026-10-09T00:00:00Z".parse().unwrap(),
     };
-    let contact = ContactRecord {
+    let contact = ContactInput {
         actor,
         profile: AiProfile {
             actor_id: ai,
@@ -79,13 +79,13 @@ fn fixture() -> (ContextMaterial, ModelSpec) {
         })
         .collect();
     let trigger_id = messages.last().unwrap().id;
-    let material = ContextMaterial {
+    let material = ContextInput {
         required_message_ids: vec![],
         reference: None,
         summaries: vec![],
         memories: vec![],
         participant_names: vec!["Human".into(), "A".into()],
-        trigger: storage::social::ContextTrigger::Message(trigger_id),
+        trigger: crate::ContextTrigger::Message(trigger_id),
         contact,
         conversation,
         members,
@@ -127,7 +127,7 @@ fn scheduled_contact_has_its_own_required_instruction_and_proof_without_fake_his
         created_at: m.contact.actor.created_at,
         updated_at: m.contact.actor.created_at,
     };
-    m.trigger = storage::social::ContextTrigger::Contact(i.clone());
+    m.trigger = crate::ContextTrigger::Contact(i.clone());
     let prepared = ConsciousnessService::prepare(m.clone(), &model, 128).unwrap();
     assert_eq!(
         prepared.snapshot.sources,
@@ -138,16 +138,16 @@ fn scheduled_contact_has_its_own_required_instruction_and_proof_without_fake_his
     assert!(wire.contains("不是新的聊天消息"));
     assert!(wire.contains("ask about reading"));
     assert!(!wire.contains("Human ·"));
-    if let storage::social::ContextTrigger::Contact(i) = &mut m.trigger {
+    if let crate::ContextTrigger::Contact(i) = &mut m.trigger {
         i.text = "x".repeat(9000);
     }
     assert!(matches!(
         ConsciousnessService::prepare(m, &model, 128),
-        Err(SocialError::BudgetExceeded)
+        Err(AgentError::BudgetExceeded)
     ));
 }
 
-fn segment(material: &ContextMaterial) -> ConversationSummary {
+fn segment(material: &ContextInput) -> ConversationSummary {
     let message = &material.messages[0];
     ConversationSummary {
         id: SummaryId::new(),
@@ -186,7 +186,7 @@ fn merged_inputs_are_all_required_and_cannot_be_replaced_by_a_summary() {
     material.summaries.push(segment(&material));
     assert!(matches!(
         ConsciousnessService::prepare(material.clone(), &model, 128),
-        Err(SocialError::BudgetExceeded)
+        Err(AgentError::BudgetExceeded)
     ));
     model.context_window = Some(8192);
     let prepared = ConsciousnessService::prepare(material.clone(), &model, 128).unwrap();
@@ -230,7 +230,7 @@ fn summaries_compress_old_originals_but_preserve_trigger_and_explicit_reply() {
     assert!(
         matches!(
             ConsciousnessService::prepare(material, &model, 128),
-            Err(SocialError::BudgetExceeded)
+            Err(AgentError::BudgetExceeded)
         ),
         "a summary never substitutes an explicitly quoted original that cannot fit"
     );
@@ -374,7 +374,7 @@ fn oversized_latest_message_is_rejected_instead_of_silently_truncated() {
     material.messages.last_mut().unwrap().body = MessageBody::text("large".repeat(1000));
     assert!(matches!(
         ConsciousnessService::prepare(material, &model, 128),
-        Err(SocialError::BudgetExceeded)
+        Err(AgentError::BudgetExceeded)
     ));
 }
 
@@ -440,7 +440,7 @@ fn explicit_reply_reserves_its_visible_source_and_identifies_the_reference() {
     material.messages[0].body = MessageBody::text("huge quote".repeat(1000));
     assert!(matches!(
         ConsciousnessService::prepare(material, &model, 128),
-        Err(SocialError::BudgetExceeded)
+        Err(AgentError::BudgetExceeded)
     ));
 }
 
@@ -457,7 +457,7 @@ fn explicit_output_budget_is_reserved_and_large_output_limits_are_not_clamped() 
     assert_eq!(prepared.snapshot.sources.len(), 1);
     assert!(matches!(
         ConsciousnessService::prepare(material, &model, 8000),
-        Err(SocialError::BudgetExceeded)
+        Err(AgentError::BudgetExceeded)
     ));
 }
 
@@ -479,11 +479,11 @@ fn cross_window_material_is_labeled_bounded_and_snapshot_records_only_actual_rea
         membership_revision: Revision::ONE,
         context_epoch: group.context_epoch,
     };
-    material.reference = Some(storage::social::ReferenceMaterial {
+    material.reference = Some(crate::ReferenceInput {
         message_id: material.trigger.message_id().unwrap(),
         revision: Revision::ONE,
         required: true,
-        preview: storage::social::ReferencePreview {
+        preview: crate::ReferenceInputPreview {
             conversation: group.clone(),
             messages: vec![original.clone()],
             summary: None,
@@ -515,7 +515,7 @@ fn cross_window_material_is_labeled_bounded_and_snapshot_records_only_actual_rea
         MessageBody::text("oversized group source".repeat(1000));
     assert!(matches!(
         ConsciousnessService::prepare(material.clone(), &model, 128),
-        Err(SocialError::BudgetExceeded)
+        Err(AgentError::BudgetExceeded)
     ));
     material.reference.as_mut().unwrap().required = false;
     let skipped = ConsciousnessService::prepare(material, &model, 128).unwrap();
@@ -553,7 +553,7 @@ fn required_images_reserve_budget_and_request_size_is_bounded() {
     material.messages[1].body = MessageBody(vec![image; 17]);
     assert!(matches!(
         ConsciousnessService::prepare(material, &model, 128),
-        Err(SocialError::BudgetExceeded)
+        Err(AgentError::BudgetExceeded)
     ));
 }
 

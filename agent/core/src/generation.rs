@@ -1,9 +1,16 @@
-use crate::{Result, wire};
+/// Per-AI model settings. Unset fields use the existing automatic generation policy.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Parameters {
+    pub temperature: Option<f32>,
+    pub max_tokens: Option<u32>,
+}
+
+use crate::Result;
 use ai_client::{ResolvedSelection, generation::GenerationLimits};
 use common::GenerationOptions;
 
 /// Reserve at least one input token; the consciousness service checks the actual prompt.
-pub(crate) fn limits(resolved: &ResolvedSelection) -> GenerationLimits {
+pub fn limits(resolved: &ResolvedSelection) -> GenerationLimits {
     let mut limits = resolved.generation_limits();
     let context_max = resolved
         .spec
@@ -45,10 +52,7 @@ mod tests {
                 reasoning: None,
             },
         };
-        let mut binding = wire::Binding {
-            provider_id: "test".into(),
-            model_id: "model".into(),
-            reasoning_effort: None,
+        let mut binding = Parameters {
             temperature: None,
             max_tokens: None,
         };
@@ -80,10 +84,7 @@ mod tests {
     }
 }
 
-pub(crate) fn options(
-    binding: &wire::Binding,
-    resolved: &ResolvedSelection,
-) -> Result<GenerationOptions> {
+pub fn options(binding: &Parameters, resolved: &ResolvedSelection) -> Result<GenerationOptions> {
     let limits = limits(resolved);
     let max = limits
         .max_output_tokens
@@ -100,7 +101,7 @@ pub(crate) fn options(
     };
     resolved.validate_generation(&options)?;
     if options.max_tokens.expect("output budget allocated") > max {
-        return Err(crate::SocialError::Invalid(format!(
+        return Err(crate::AgentError::Invalid(format!(
             "输出上限必须小于上下文窗口，当前最多 {max}"
         )));
     }

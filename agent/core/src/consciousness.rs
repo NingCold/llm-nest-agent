@@ -1,24 +1,24 @@
-use crate::{Result, SocialError};
+use crate::{AgentError, Result};
+use crate::{ContextInput, ContextTrigger};
 use ai_client::router::ModelSpec;
 use common::{ContentPart, Message, Role};
 use social::*;
-use storage::social::ContextMaterial;
 
-pub(crate) struct PreparedContext {
+pub struct PreparedContext {
     pub messages: Vec<Message>,
     pub snapshot: ContextSnapshot,
     pub expected_revision: Revision,
 }
 
-pub(crate) struct ConsciousnessService;
+pub struct ConsciousnessService;
 impl ConsciousnessService {
     pub fn prepare(
-        material: ContextMaterial,
+        material: ContextInput,
         model: &ModelSpec,
         output_tokens: u32,
     ) -> Result<PreparedContext> {
         // Until model-specific tokenizers are introduced, UTF-8 bytes plus message
-        // overhead provide a conservative text estimate. Complete history stays in SQLite.
+        // overhead provide a conservative text estimate. The host keeps complete history.
         let window = model.context_window.unwrap_or(8192);
         let input_limit = window.saturating_sub(output_tokens);
         let space = if material.conversation.kind == ConversationKind::Group {
@@ -38,7 +38,7 @@ impl ConsciousnessService {
                 .expect("store supplies visible trigger")
         });
         let instruction = match &material.trigger {
-            storage::social::ContextTrigger::Message(_) => {
+            ContextTrigger::Message(_) => {
                 let t = trigger.expect("message trigger");
                 format!(
                     "本次请回应 {} 在 {} 发送的第 {} 条消息。",
@@ -47,7 +47,7 @@ impl ConsciousnessService {
                     t.sequence
                 )
             }
-            storage::social::ContextTrigger::Contact(i) => format!(
+            ContextTrigger::Contact(i) => format!(
                 "本次是用户明确授权的一次性约定联系。约定时间 {}，有效至 {}。请根据约定主动发一条消息；用户此刻没有发送新消息，不要捏造回应或已完成的外部行动。",
                 i.due_at.to_rfc3339(),
                 i.expires_at.to_rfc3339()
@@ -58,7 +58,7 @@ impl ConsciousnessService {
             material.contact.actor.display_name, material.contact.profile.persona
         ));
         let contact_message = match &material.trigger {
-            storage::social::ContextTrigger::Contact(i) => Some(Message::user(format!(
+            ContextTrigger::Contact(i) => Some(Message::user(format!(
                 "[用户明确授权的一次性约定；不是新的聊天消息]\n{}",
                 i.text
             ))),
@@ -66,7 +66,7 @@ impl ConsciousnessService {
         };
         let mut used = estimate(&system) + contact_message.as_ref().map_or(0, estimate);
         if output_tokens == 0 || used >= input_limit {
-            return Err(SocialError::BudgetExceeded);
+            return Err(AgentError::BudgetExceeded);
         }
         let quoted = trigger
             .and_then(|t| t.reply_to)
@@ -87,7 +87,7 @@ impl ConsciousnessService {
             images.add_required(wire)?;
         }
         if used > input_limit {
-            return Err(SocialError::BudgetExceeded);
+            return Err(AgentError::BudgetExceeded);
         }
         for id in &material.required_message_ids {
             if selected.iter().any(|(m, _)| m.id == *id) {
@@ -97,12 +97,12 @@ impl ConsciousnessService {
                 .messages
                 .iter()
                 .find(|m| m.id == *id)
-                .ok_or(SocialError::BudgetExceeded)?;
+                .ok_or(AgentError::BudgetExceeded)?;
             let wire = render(message, material.contact.actor.id, None);
             images.add_required(&wire)?;
             used += estimate(&wire);
             if used > input_limit {
-                return Err(SocialError::BudgetExceeded);
+                return Err(AgentError::BudgetExceeded);
             }
             selected.push((message, wire));
         }
@@ -136,7 +136,7 @@ impl ConsciousnessService {
                 (input_limit - used) / 2
             };
             if (cost > limit || !images.fits(&wire)) && reference.required {
-                return Err(SocialError::BudgetExceeded);
+                return Err(AgentError::BudgetExceeded);
             }
             if cost <= limit && images.fits(&wire) {
                 images.add_required(&wire)?;
@@ -264,7 +264,7 @@ impl ConsciousnessService {
                 revision: m.revision,
             })
             .collect();
-        if let storage::social::ContextTrigger::Contact(i) = &material.trigger {
+        if let ContextTrigger::Contact(i) = &material.trigger {
             sources.push(SourceRef::ContactIntent { intent_id: i.id });
         }
         sources.extend(memory_sources);
@@ -280,7 +280,7 @@ impl ConsciousnessService {
             .contact
             .binding
             .as_ref()
-            .ok_or_else(|| SocialError::ModelUnavailable("该 AI 尚未配置模型".into()))?;
+            .ok_or_else(|| AgentError::ModelUnavailable("该 AI 尚未配置模型".into()))?;
         let snapshot = ContextSnapshot {
             scope: ContextScope {
                 actor_id: material.contact.actor.id,
@@ -337,20 +337,20 @@ impl ImageLoad {
     }
     fn add_required(&mut self, message: &Message) -> Result<()> {
         if !self.fits(message) {
-            return Err(SocialError::BudgetExceeded);
+            return Err(AgentError::BudgetExceeded);
         }
         *self = self.plus(message);
         Ok(())
     }
 }
 
-pub(crate) fn estimate(message: &Message) -> u32 {
+pub fn estimate(message: &Message) -> u32 {
     message
         .content
         .iter()
         .map(|part| match part {
             ContentPart::Text(text) => text.len() as u32,
-            ContentPart::Image { data, .. } => crate::images::image_cost(data),
+            ContentPart::Image { data, .. } => crate::attachments::image_cost(data),
             ContentPart::File { data, .. } => data.len() as u32,
             _ => unreachable!("consciousness creates social text/attachment parts only"),
         })
@@ -379,9 +379,9 @@ fn render(message: &SocialMessage, actor_id: ActorId, reply_sequence: Option<Seq
             mime: mime.clone(),
             data: data.clone(),
         },
-        SocialContent::File { name, mime, data } => {
-            ContentPart::Text(crate::files::placeholder(name.as_deref(), mime, data.len()))
-        }
+        SocialContent::File { name, mime, data } => ContentPart::Text(
+            social::attachment::placeholder(name.as_deref(), mime, data.len()),
+        ),
     }));
     Message::new(role, content)
 }

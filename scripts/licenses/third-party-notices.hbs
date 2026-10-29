@@ -10,14 +10,14 @@ that component's exact-version crate source archive listed below.
 {{name}} ({{id}})
 {{#each used_by}}
 Component: {{crate.name}} {{crate.version}}
-Repository: {{crate.repository}}
+Repository: {{{crate.repository}}}
 {{#if (eq crate.source "registry+https://github.com/rust-lang/crates.io-index")}}
 Source archive: https://static.crates.io/crates/{{crate.name}}/{{crate.name}}-{{crate.version}}.crate
 {{else}}
 {{#if crate.source}}
-Cargo source (includes the fixed revision for Git packages): {{crate.source}}
+Cargo source (includes the fixed revision for Git packages): {{{crate.source}}}
 {{else}}
-Project release source archive: {{crate.repository}}/archive/refs/tags/v{{crate.version}}.tar.gz
+Project release source archive: {{{crate.repository}}}/archive/refs/tags/v{{crate.version}}.tar.gz
 {{/if}}
 {{/if}}
 {{/each}}

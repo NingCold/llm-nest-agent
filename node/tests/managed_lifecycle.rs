@@ -8,6 +8,8 @@ fn command(verb: &str, directory: &Path) -> tokio::process::Command {
     command
         .args([verb])
         .arg(directory)
+        .env_remove("API_KEY_CHATECNU")
+        .env("LLMN_MANAGED_TEST_KEY", "fixture-only-not-a-real-key")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -15,6 +17,26 @@ fn command(verb: &str, directory: &Path) -> tokio::process::Command {
     #[cfg(windows)]
     command.creation_flags(0x08000000);
     command
+}
+
+fn fixture_config(directory: &Path, server: &str) -> toml::Value {
+    let path = directory.join("node.toml");
+    let mut config: toml::Value = toml::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    config["server"] = server.into();
+    config["profile"] = toml::Value::try_from(json!({
+        "revision":"1", "persona":"Fixture assistant",
+        "selection":{"provider":"fixture","model":"fixture"}, "max_tokens":128
+    }))
+    .unwrap();
+    config["providers"] = toml::Value::try_from(json!({"fixture":{
+        "protocol":"openai",
+        "api_key":{"env":"LLMN_MANAGED_TEST_KEY"},
+        "base_url":format!("{server}/v1"),
+        "models":{"fixture":{"model":"fixture","context_window":8192,"max_tokens":1024}}
+    }}))
+    .unwrap();
+    std::fs::write(path, toml::to_string(&config).unwrap()).unwrap();
+    config
 }
 
 async fn status(directory: &Path) -> Value {
@@ -35,11 +57,7 @@ async fn hidden_managed_start_acknowledges_before_immediate_status_probes() {
             .status
             .success()
     );
-    let config_path = directory.join("node.toml");
-    let mut config: toml::Value =
-        toml::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
-    config["server"] = toml::Value::String("https://127.0.0.1:1".into());
-    std::fs::write(&config_path, toml::to_string(&config).unwrap()).unwrap();
+    let config = fixture_config(&directory, "http://127.0.0.1:1");
     let profile = serde_json::to_string(&config["profile"]).unwrap();
     {
         let db = rusqlite::Connection::open(directory.join("node.sqlite")).unwrap();
@@ -101,8 +119,7 @@ async fn transfer_export_uses_directory_lock_and_preserves_database() {
             .status
             .success()
     );
-    let config: toml::Value =
-        toml::from_str(&std::fs::read_to_string(directory.join("node.toml")).unwrap()).unwrap();
+    let config = fixture_config(&directory, "http://127.0.0.1:1");
     let ai = uuid::Uuid::new_v4().to_string();
     let database = directory.join("node.sqlite");
     {
@@ -258,11 +275,7 @@ async fn managed_crypto_restart_processes_successful_sdk_responses() {
             .status
             .success()
     );
-    let config_path = directory.join("node.toml");
-    let mut config: toml::Value =
-        toml::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
-    config["server"] = toml::Value::String(format!("http://{address}"));
-    std::fs::write(&config_path, toml::to_string(&config).unwrap()).unwrap();
+    let config = fixture_config(&directory, &format!("http://{address}"));
     let ai = uuid::Uuid::new_v4().to_string();
     let device_id = uuid::Uuid::new_v4().to_string();
     let key = [42_u8; 32];

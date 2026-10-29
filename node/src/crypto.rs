@@ -3,6 +3,7 @@ use crate::store::{Binding, Config, Store};
 use anyhow::{Result, ensure};
 use base64::Engine;
 use connector::{crypto::*, node::*};
+use futures_util::FutureExt;
 use llmn_crypto::{Device, requests::Request};
 use rand::RngCore;
 use rusqlite::{OptionalExtension, params};
@@ -118,7 +119,11 @@ pub async fn sync(
     config: &Config,
     binding: &Binding,
 ) -> Result<()> {
-    sync_inner(api, store, config, binding, true).await
+    // The SDK-backed sync owns a large future. Keep it out of the enclosing
+    // node cycle frame so polling persisted crypto state fits the native stack.
+    sync_inner(api, store, config, binding, true)
+        .boxed_local()
+        .await
 }
 async fn sync_inner(
     api: &NodeClient,

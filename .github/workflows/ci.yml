@@ -36,6 +36,7 @@ jobs:
       - run: |
           python scripts/check-boundaries.py
           python scripts/test_package_agent.py
+          python scripts/test_merge_agent_artifacts.py
           cargo fmt --all -- --check
           cargo build --workspace --locked
           cargo test --workspace --locked

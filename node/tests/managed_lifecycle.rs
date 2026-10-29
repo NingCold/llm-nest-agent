@@ -157,3 +157,143 @@ async fn transfer_export_uses_directory_lock_and_preserves_database() {
     assert_eq!(package["version"], 1);
     assert_eq!(package["aiId"], ai);
 }
+
+#[tokio::test]
+async fn managed_start_reopens_existing_crypto_identity_before_cloud_sync() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let crypto_requests = Arc::new(AtomicUsize::new(0));
+    let observed = crypto_requests.clone();
+    let server = tokio::spawn(async move {
+        loop {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let observed = observed.clone();
+            tokio::spawn(async move {
+                let mut request = Vec::new();
+                loop {
+                    let mut buffer = [0; 4096];
+                    let count = stream.read(&mut buffer).await.unwrap();
+                    if count == 0 {
+                        return;
+                    }
+                    request.extend_from_slice(&buffer[..count]);
+                    if request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let request = String::from_utf8_lossy(&request);
+                let (status, body) = if request.lines().next().unwrap().contains("/changes") {
+                    ("200 OK", r#"{"cursor":"0","hasMore":false,"changes":[]}"#)
+                } else {
+                    if request.lines().next().unwrap().contains("/crypto/devices") {
+                        observed.fetch_add(1, Ordering::SeqCst);
+                    }
+                    ("503 Unavailable", "{}")
+                };
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes()).await;
+            });
+        }
+    });
+    let fixture = tempfile::tempdir().unwrap();
+    let directory = fixture.path().join("node");
+    assert!(
+        command("init", &directory)
+            .output()
+            .await
+            .unwrap()
+            .status
+            .success()
+    );
+    let config_path = directory.join("node.toml");
+    let mut config: toml::Value =
+        toml::from_str(&std::fs::read_to_string(&config_path).unwrap()).unwrap();
+    config["server"] = toml::Value::String(format!("http://{address}"));
+    std::fs::write(&config_path, toml::to_string(&config).unwrap()).unwrap();
+    let ai = uuid::Uuid::new_v4().to_string();
+    let device_id = uuid::Uuid::new_v4().to_string();
+    let key = [42_u8; 32];
+    {
+        let device =
+            llmn_crypto::Device::open(&directory.join("crypto").join(&ai), &ai, &device_id, &key)
+                .await
+                .unwrap();
+        assert_eq!(device.machine().device_id().as_str(), device_id);
+    }
+    {
+        let db = rusqlite::Connection::open(directory.join("node.sqlite")).unwrap();
+        db.execute(
+            "INSERT INTO bindings VALUES(?1,'1','fixture-credential')",
+            [&ai],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO profiles VALUES(?1,?2)",
+            rusqlite::params![ai, serde_json::to_string(&config["profile"]).unwrap()],
+        )
+        .unwrap();
+        db.execute_batch("CREATE TABLE crypto_devices(ai TEXT PRIMARY KEY,device TEXT NOT NULL,local_key BLOB NOT NULL,cursor TEXT NOT NULL DEFAULT '0',ready INTEGER NOT NULL DEFAULT 0);").unwrap();
+        db.execute(
+            "INSERT INTO crypto_devices(ai,device,local_key) VALUES(?1,?2,?3)",
+            rusqlite::params![ai, device_id, key.as_slice()],
+        )
+        .unwrap();
+    }
+    let mut child = command("run-managed", &directory)
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let ready = tokio::time::timeout(Duration::from_secs(5), lines.next_line())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&ready).unwrap()["type"],
+        "ready"
+    );
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while crypto_requests.load(Ordering::SeqCst) == 0 {
+            if let Some(exit) = child.try_wait().unwrap() {
+                let mut stderr = String::new();
+                child
+                    .stderr
+                    .take()
+                    .unwrap()
+                    .read_to_string(&mut stderr)
+                    .await
+                    .unwrap();
+                panic!("managed crypto startup exited {exit}: {stderr}");
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("existing SDK identity must reopen and reach cloud sync");
+    assert!(child.try_wait().unwrap().is_none());
+    assert!(
+        command("stop", &directory)
+            .output()
+            .await
+            .unwrap()
+            .status
+            .success()
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_secs(5), child.wait())
+            .await
+            .unwrap()
+            .unwrap()
+            .success()
+    );
+    server.abort();
+}

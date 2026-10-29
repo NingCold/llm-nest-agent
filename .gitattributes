@@ -1,2 +1,6 @@
 *.sh text eol=lf
 *.yml text eol=lf
+
+# Shared release materials must match across platform checkouts.
+LICENSE text eol=lf
+NOTICE text eol=lf

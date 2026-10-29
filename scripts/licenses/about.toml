@@ -1,0 +1,10 @@
+# Prioritize permissive alternatives; retain the file-level MPL components.
+accepted = [
+    "Apache-2.0", "MIT", "BSD-3-Clause", "BSD-2-Clause", "ISC", "Zlib",
+    "Unicode-3.0", "MPL-2.0", "BSL-1.0", "CC0-1.0", "Unlicense", "0BSD",
+    "Apache-2.0 WITH LLVM-exception",
+]
+ignore-build-dependencies = false
+ignore-dev-dependencies = true
+ignore-transitive-dependencies = false
+workarounds = ["chrono", "rustix", "linux-raw-sys", "unicode-ident"]

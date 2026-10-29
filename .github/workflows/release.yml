@@ -25,9 +25,13 @@ jobs:
           - os: windows-2022
             target: x86_64-pc-windows-msvc
             suffix: .exe
+            about_asset: cargo-about-0.9.3-x86_64-pc-windows-msvc
+            about_sha256: 9e2942533ef1c592c4a70bdb384cae1550a3f5fc9ae40379b6662e3d2f16fe02
           - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             suffix: ''
+            about_asset: cargo-about-0.9.3-x86_64-unknown-linux-musl
+            about_sha256: 3ad1e94ea1e63d69d1961f4fb15ccbbe9575d906111f96d2cb4dce6df48f71b4
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     env:
@@ -50,6 +54,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libssl-dev pkg-config
+      - name: Fetch pinned cargo-about 0.9.3
+        run: |
+          curl --fail --location --proto '=https' "https://github.com/EmbarkStudios/cargo-about/releases/download/0.9.3/${{ matrix.about_asset }}.tar.gz" --output "$RUNNER_TEMP/cargo-about.tar.gz"
+          echo '${{ matrix.about_sha256 }}  '"$RUNNER_TEMP/cargo-about.tar.gz" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/cargo-about"
+          tar -xzf "$RUNNER_TEMP/cargo-about.tar.gz" --strip-components=1 -C "$RUNNER_TEMP/cargo-about"
+          echo "$RUNNER_TEMP/cargo-about" >> "$GITHUB_PATH"
       - run: |
           python scripts/check-boundaries.py
           python scripts/test_package_agent.py
@@ -57,7 +68,8 @@ jobs:
           cargo test --workspace --locked
           cargo build -p agent-node --bin llmn-agent --release --target ${{ matrix.target }} --locked
           version=$(python -c "import tomllib; print(tomllib.load(open('Cargo.toml','rb'))['workspace']['package']['version'])")
-          python scripts/package-agent.py --binary target/${{ matrix.target }}/release/llmn-agent${{ matrix.suffix }} --output agent-artifacts --version "$version" --target ${{ matrix.target }}
+          cargo-about generate --manifest-path node/Cargo.toml --target ${{ matrix.target }} --locked --fail --config scripts/licenses/about.toml --output-file "$RUNNER_TEMP/agent-third-party-notices.txt" scripts/licenses/third-party-notices.hbs
+          python scripts/package-agent.py --binary target/${{ matrix.target }}/release/llmn-agent${{ matrix.suffix }} --output agent-artifacts --version "$version" --target ${{ matrix.target }} --notices "$RUNNER_TEMP/agent-third-party-notices.txt"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: agent-${{ matrix.target }}
@@ -119,7 +131,7 @@ jobs:
           cat > release-notes.md <<'NOTES'
           独立 LLM-Nest Agent 程序：Windows x64 与 Linux x64。
 
-          agent-manifest.json 同时记录两平台的固定 tag 下载地址与 SHA-256；SHA256SUMS.txt 覆盖程序和清单。
+          agent-manifest.json 同时记录两平台程序和第三方声明的固定 tag 下载地址与 SHA-256；SHA256SUMS.txt 覆盖程序、声明、LICENSE、NOTICE 和清单。
           产物不包含节点数据、模型 Key、凭据或恢复材料。固定地址须在本草稿公开后才可下载。
           维护者请核对平台验收、许可证及第三方声明后手动公开；此流程不自动发布或创建 tag。
           NOTES

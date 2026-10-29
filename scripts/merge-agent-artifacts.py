@@ -18,6 +18,7 @@ def merge(inputs, output, tag=None, repository="NingCold/llm-nest-agent"):
     version = None
     artifacts = {}
     sources = {}
+    own_licenses = {}
     for manifest_path in manifests:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         current = manifest["agentVersion"]
@@ -38,8 +39,25 @@ def merge(inputs, output, tag=None, repository="NingCold/llm-nest-agent"):
             digest = hashlib.sha256(source.read_bytes()).hexdigest()
             if digest != entry["sha256"]:
                 raise ValueError("Artifact checksum mismatch")
-            artifacts[target] = {"file": name, "sha256": digest}
+            notice_name = f"THIRD_PARTY_NOTICES-{version}-{target}.txt"
+            notice = entry["notices"]
+            if notice["file"] != notice_name:
+                raise ValueError("Unexpected notices filename")
+            notice_source = manifest_path.parent / notice_name
+            notice_digest = hashlib.sha256(notice_source.read_bytes()).hexdigest()
+            if notice_digest != notice["sha256"]:
+                raise ValueError("Notices checksum mismatch")
+            artifacts[target] = {"file": name, "sha256": digest,
+                                 "notices": {"file": notice_name, "sha256": notice_digest}}
             sources[name] = source
+            sources[notice_name] = notice_source
+            for license_name in ("LICENSE", "NOTICE"):
+                license_source = manifest_path.parent / license_name
+                data = license_source.read_bytes()
+                if license_name in own_licenses and own_licenses[license_name] != data:
+                    raise ValueError("Platform product license materials differ")
+                own_licenses[license_name] = data
+                sources[license_name] = license_source
     if set(artifacts) != TARGETS:
         raise ValueError("Both supported targets are required")
     if tag:
@@ -47,6 +65,7 @@ def merge(inputs, output, tag=None, repository="NingCold/llm-nest-agent"):
             raise ValueError("Release tag does not match Agent version")
         for entry in artifacts.values():
             entry["url"] = f"https://github.com/{repository}/releases/download/{tag}/{entry['file']}"
+            entry["notices"]["url"] = f"https://github.com/{repository}/releases/download/{tag}/{entry['notices']['file']}"
     if output.exists() and any(output.iterdir()):
         raise ValueError("Output directory must be empty")
     output.mkdir(parents=True, exist_ok=True)
@@ -55,7 +74,7 @@ def merge(inputs, output, tag=None, repository="NingCold/llm-nest-agent"):
     combined = {"schemaVersion": 1, "agentVersion": version, "artifacts": artifacts}
     manifest_path = output / "agent-manifest.json"
     manifest_path.write_text(json.dumps(combined, indent=2) + "\n", encoding="utf-8")
-    checksums = {entry["file"]: entry["sha256"] for entry in artifacts.values()}
+    checksums = {name: hashlib.sha256((output / name).read_bytes()).hexdigest() for name in sources}
     checksums[manifest_path.name] = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
     (output / "SHA256SUMS.txt").write_text("".join(f"{digest}  {name}\n" for name, digest in sorted(checksums.items())), encoding="utf-8")
     return combined

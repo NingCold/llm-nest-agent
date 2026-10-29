@@ -21,3 +21,5 @@ python scripts/test_clean_build_artifacts.py
 2026-10-29 本地拆仓组合验收发现 Windows MSVC 默认 1 MiB 主线程栈不足以容纳 debug 构建的 Matrix SDK Olm 接收深链。`llmn-agent` 现仅在 Windows MSVC 显式保留 2 MiB 主线程栈，PE 验读为 reserve=2097152、commit=4096；不改变协议、任务顺序或持久恢复规则。平台参数见 [Microsoft /STACK](https://learn.microsoft.com/en-us/cpp/build/reference/stack-stack-allocations?view=msvc-170)。已有 SDK 身份的托管重启回归使用成功的密钥查询、上传及 sync 响应，确认处理后进入资料读取并正常停止。
 
 同日服务端组织的 full 与 migration 两种隔离组合验收均通过：覆盖真实 Agent 加密消息/附件/引用、离线 Olm 和补传、资料应用与遗忘、摘要、交接及新节点恢复，以及历史转换与节点资料迁移；使用模拟模型和独立测试资料。Linux 实机、真实客户端重启验读与独立安全审查的原有缺口继续保留。
+
+第三方许可材料由 cargo-about 0.9.3 按 Windows/Linux 目标的锁定依赖生成，发布包要求同时提供程序、第三方声明、LICENSE 与 NOTICE。`test_package_agent.py` / `test_merge_agent_artifacts.py` 校验声明原文、摘要、固定地址及篡改拒绝。生成过程不编译代码或调用模型；声明生成通过不等于全部平台系统库或法律审查已完成。

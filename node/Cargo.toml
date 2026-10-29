@@ -1,4 +1,6 @@
 [package]
+license.workspace = true
+repository.workspace = true
 name = "agent-node"
 version.workspace = true
 edition.workspace = true

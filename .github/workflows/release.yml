@@ -56,11 +56,11 @@ jobs:
           sudo apt-get install -y --no-install-recommends libssl-dev pkg-config
       - name: Fetch pinned cargo-about 0.9.3
         run: |
-          curl --fail --location --proto '=https' "https://github.com/EmbarkStudios/cargo-about/releases/download/0.9.3/${{ matrix.about_asset }}.tar.gz" --output "$RUNNER_TEMP/cargo-about.tar.gz"
-          echo '${{ matrix.about_sha256 }}  '"$RUNNER_TEMP/cargo-about.tar.gz" | sha256sum --check
-          mkdir -p "$RUNNER_TEMP/cargo-about"
-          tar -xzf "$RUNNER_TEMP/cargo-about.tar.gz" --strip-components=1 -C "$RUNNER_TEMP/cargo-about"
-          echo "$RUNNER_TEMP/cargo-about" >> "$GITHUB_PATH"
+          curl --fail --location --proto '=https' "https://github.com/EmbarkStudios/cargo-about/releases/download/0.9.3/${{ matrix.about_asset }}.tar.gz" --output cargo-about.tar.gz
+          echo '${{ matrix.about_sha256 }}  cargo-about.tar.gz' | sha256sum --check
+          mkdir -p cargo-about-bin
+          tar -xzf cargo-about.tar.gz --strip-components=1 -C cargo-about-bin
+          echo "$GITHUB_WORKSPACE/cargo-about-bin" >> "$GITHUB_PATH"
       - run: |
           python scripts/check-boundaries.py
           python scripts/test_package_agent.py

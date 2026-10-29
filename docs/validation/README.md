@@ -18,4 +18,6 @@ python scripts/test_clean_build_artifacts.py
 
 客户端/服务端组合联调由服务端仓组织，读取明确提交和产物摘要，独立账号与模拟模型；当前本地拆仓结果由主仓进度说明记录。
 
-2026-10-29 本地拆仓联调发现 Windows MSVC debug 在 run-managed 重开已有 SDK 加密身份时，ready 后主线程溢栈。新增的真实 SDK 临时身份与模拟云端启动测试能复现该失败；crypto 同步 Future 在节点循环内单独堆分配后，测试可完成身份重开、抵达设备登记请求并正常停止。此检查不调用模型、不读取日常节点；完整密文组合联调仍由服务端验收覆盖，不能仅以启动回归代替。
+2026-10-29 本地拆仓组合验收发现 Windows MSVC 默认 1 MiB 主线程栈不足以容纳 debug 构建的 Matrix SDK Olm 接收深链。`llmn-agent` 现仅在 Windows MSVC 显式保留 2 MiB 主线程栈，PE 验读为 reserve=2097152、commit=4096；不改变协议、任务顺序或持久恢复规则。平台参数见 [Microsoft /STACK](https://learn.microsoft.com/en-us/cpp/build/reference/stack-stack-allocations?view=msvc-170)。已有 SDK 身份的托管重启回归使用成功的密钥查询、上传及 sync 响应，确认处理后进入资料读取并正常停止。
+
+同日服务端组织的 full 与 migration 两种隔离组合验收均通过：覆盖真实 Agent 加密消息/附件/引用、离线 Olm 和补传、资料应用与遗忘、摘要、交接及新节点恢复，以及历史转换与节点资料迁移；使用模拟模型和独立测试资料。Linux 实机、真实客户端重启验读与独立安全审查的原有缺口继续保留。

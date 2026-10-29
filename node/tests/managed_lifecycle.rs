@@ -159,7 +159,7 @@ async fn transfer_export_uses_directory_lock_and_preserves_database() {
 }
 
 #[tokio::test]
-async fn managed_start_reopens_existing_crypto_identity_before_cloud_sync() {
+async fn managed_crypto_restart_processes_successful_sdk_responses() {
     use std::sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -168,11 +168,14 @@ async fn managed_start_reopens_existing_crypto_identity_before_cloud_sync() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let crypto_requests = Arc::new(AtomicUsize::new(0));
+    let key_queries = Arc::new(AtomicUsize::new(0));
+    let queried = key_queries.clone();
     let observed = crypto_requests.clone();
     let server = tokio::spawn(async move {
         loop {
             let (mut stream, _) = listener.accept().await.unwrap();
             let observed = observed.clone();
+            let queried = queried.clone();
             tokio::spawn(async move {
                 let mut request = Vec::new();
                 loop {
@@ -182,19 +185,61 @@ async fn managed_start_reopens_existing_crypto_identity_before_cloud_sync() {
                         return;
                     }
                     request.extend_from_slice(&buffer[..count]);
-                    if request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
-                        break;
+                    if let Some(end) = request.windows(4).position(|bytes| bytes == b"\r\n\r\n") {
+                        let headers = String::from_utf8_lossy(&request[..end]);
+                        let length = headers
+                            .lines()
+                            .find_map(|line| {
+                                let (name, value) = line.split_once(':')?;
+                                name.eq_ignore_ascii_case("content-length")
+                                    .then(|| value.trim().parse::<usize>().unwrap())
+                            })
+                            .unwrap_or(0);
+                        if request.len() >= end + 4 + length {
+                            break;
+                        }
                     }
                 }
-                let request = String::from_utf8_lossy(&request);
-                let (status, body) = if request.lines().next().unwrap().contains("/changes") {
-                    ("200 OK", r#"{"cursor":"0","hasMore":false,"changes":[]}"#)
-                } else {
-                    if request.lines().next().unwrap().contains("/crypto/devices") {
-                        observed.fetch_add(1, Ordering::SeqCst);
+                let headers_end = request
+                    .windows(4)
+                    .position(|bytes| bytes == b"\r\n\r\n")
+                    .unwrap();
+                let headers = String::from_utf8_lossy(&request[..headers_end]);
+                let path = headers.lines().next().unwrap();
+                let (status, body) = if path.contains("/changes") {
+                    ("200 OK", json!({"cursor":"0","hasMore":false,"changes":[]}))
+                } else if path.contains("/crypto/devices") {
+                    ("200 OK", json!({}))
+                } else if path.contains("/crypto/requests") {
+                    let request: Value =
+                        serde_json::from_slice(&request[headers_end + 4..]).unwrap();
+                    if request["kind"] == "keysQuery" {
+                        queried.fetch_add(1, Ordering::SeqCst);
                     }
-                    ("503 Unavailable", "{}")
+                    let response = match request["kind"].as_str().unwrap() {
+                        "keysQuery" => {
+                            json!({"device_keys":{},"master_keys":{},"self_signing_keys":{},"user_signing_keys":{},"failures":{}})
+                        }
+                        "keysUpload" => json!({"one_time_key_counts":{"signed_curve25519":50}}),
+                        _ => json!({}),
+                    };
+                    ("200 OK", response)
+                } else if path.contains("/crypto/sync") {
+                    (
+                        "200 OK",
+                        json!({"next_batch":"0","to_device":{"events":[]},"device_lists":{"changed":[],"left":[]},"device_one_time_keys_count":{"signed_curve25519":50},"device_unused_fallback_key_types":[]}),
+                    )
+                } else if path.contains("/crypto/resources") {
+                    // Material fetch happens only after successful SDK key
+                    // acknowledgements and processing the sync response.
+                    observed.fetch_add(1, Ordering::SeqCst);
+                    ("200 OK", json!({"items":[]}))
+                } else if path.contains("/crypto/conversations") {
+                    ("200 OK", json!({"conversations":[]}))
+                } else {
+                    ("503 Unavailable", json!({}))
                 };
+                let body = body.to_string();
                 let response = format!(
                     "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                     body.len()
@@ -227,6 +272,12 @@ async fn managed_start_reopens_existing_crypto_identity_before_cloud_sync() {
                 .await
                 .unwrap();
         assert_eq!(device.machine().device_id().as_str(), device_id);
+        let peer = llmn_crypto::ruma::UserId::parse("@peer:llmn").unwrap();
+        device
+            .machine()
+            .update_tracked_users([peer.as_ref()])
+            .await
+            .unwrap();
     }
     {
         let db = rusqlite::Connection::open(directory.join("node.sqlite")).unwrap();
@@ -278,8 +329,12 @@ async fn managed_start_reopens_existing_crypto_identity_before_cloud_sync() {
         }
     })
     .await
-    .expect("existing SDK identity must reopen and reach cloud sync");
+    .expect("existing SDK identity must reopen, acknowledge key responses and process cloud sync");
     assert!(child.try_wait().unwrap().is_none());
+    assert!(
+        key_queries.load(Ordering::SeqCst) > 0,
+        "the SDK key-query response must be acknowledged before sync"
+    );
     assert!(
         command("stop", &directory)
             .output()

@@ -37,4 +37,4 @@ python scripts/check-boundaries.py
 python scripts/test_clean_build_artifacts.py
 ```
 
-参考 [开发](docs/development.md) 与 [验证](docs/validation/README.md)。CI、模拟 provider、真实模型和实机验收分别报告；不把拆仓构建通过称为生产或全面安全验收。发布仅检查本仓版本；产物为程序和带SHA-256的manifest，不带任何节点目录。未明确许可证前不虚构许可或支持承诺。
+参考 [开发](docs/development.md) 与 [验证](docs/validation/README.md)。CI、模拟 provider、真实模型和实机验收分别报告；不把拆仓构建通过称为生产或全面安全验收。发布仅检查本仓版本；产物包含程序、带 SHA-256 的 manifest、对应平台第三方声明及 LICENSE/NOTICE，不带任何节点目录。本仓代码采用 Apache-2.0，第三方组件保留各自条款；不要虚构签名、支持或安全验收承诺。

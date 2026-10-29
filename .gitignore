@@ -36,15 +36,10 @@ config/llmn.toml
 
 # Project state (local only, not for VCS)
 STATE.md
-/client/desktop/dist/
-/client/web/dist/
-/client/web/.social-preview-dist/
-/client/web/.social-runtime-dist/
 
 # Tauri rebuilds permission schemas/manifests for each target platform.
-/client/desktop/src-tauri/gen/schemas/
-/client/desktop/src-tauri/resources/agent-artifact.json
 
 # Local Python/build helpers
 __pycache__/
 /release-assets/
+/agent-artifacts/

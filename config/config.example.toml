@@ -1,7 +1,5 @@
-# Example model service for Web and desktop development.
-# Save your configuration as config/llmn.toml.
-# The real file and config/.env are gitignored. Never commit an API key.
-# Desktop installers start with empty providers and offer a settings page.
+# Copy this providers fragment into an initialized private node.toml.
+# Keep the API key in the referenced environment variable.
 
 [providers.deepseek]
 api_key = { env = "DEEPSEEK_API_KEY" }

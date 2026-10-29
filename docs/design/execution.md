@@ -1,12 +1,12 @@
 # AI 执行
 
-[总纲](overview.md) · [意识系统](consciousness.md) · [参与与调度](participation.md)
+[总纲](https://github.com/NingCold/llm-nest/blob/main/docs/design/overview.md) · [意识系统](consciousness.md) · [参与与调度](https://github.com/NingCold/llm-nest-server/blob/main/docs/design/participation.md)
 
 ## 当前云端私聊与群聊执行
 
-聊天提供显式启用 `sealedV1` 的执行路径：节点使用官方 Matrix SDK 解密材料，核验设备与账号 master 双签后复用原上下文与任务确认；流式、结果与中断片段只上传密文封装。资料须由当前绑定节点确认应用，换节点提供 drain/ready 握手；恢复不会自动重跑结果不明的调用。同机使用同一封装，Olm 密钥投递已通过真实 Windows IPC 验证，联调见[当前安排](../project/current.md)。群、附件与约定仍保留原权限和调度规则，内容由节点解密；完整协议见[加密契约](crypto-contract.md)。
+聊天提供显式启用 `sealedV1` 的执行路径：节点使用官方 Matrix SDK 解密材料，核验设备与账号 master 双签后复用原上下文与任务确认；流式、结果与中断片段只上传密文封装。资料须由当前绑定节点确认应用，换节点提供 drain/ready 握手；恢复不会自动重跑结果不明的调用。同机使用同一封装，Olm 密钥投递已通过真实 Windows IPC 验证，联调见[当前安排](https://github.com/NingCold/llm-nest/blob/main/docs/project/current.md)。群、附件与约定仍保留原权限和调度规则，内容由节点解密；完整协议见[加密契约](https://github.com/NingCold/llm-nest-server/blob/main/docs/design/crypto-contract.md)。
 
-`server/cloud` 与独立 `agent/node` 已实现云端 AI 私聊、群聊、有限自动接话和一次性约定；字段见[节点接口](api.md#云端-ai-与节点接口)，实际联调证据另由[验证记录](../validation/README.md)维护。协议为 v4，旧版本节点明确拒绝。云端不加载模型客户端，`llmn-agent` 复用 `ai-client` 与 `builtin-agent` 纯上下文核心，不依赖旧 Runtime/SocialStore。
+服务端与独立 `node` 提供云端 AI 私聊、群聊、有限自动接话和一次性约定；字段见[节点接口](https://github.com/NingCold/llm-nest-server/blob/main/docs/design/api.md#云端-ai-与节点接口)，实际联调证据另由[验证记录](../validation/README.md)维护。协议为 v4，旧版本节点明确拒绝。云端不加载模型客户端，`llmn-agent` 复用 `ai-client` 与 `builtin-agent` 纯上下文核心，不依赖旧 Runtime/SocialStore。
 
 云端先保存真人消息，再按结构化 mentions 顺序选出当前有效 AI，追加被回复 AI 并去重，为每个目标建立五分钟有效任务；群内普通文字名字不构成提及。默认没有明确目标不触发模型；开启有限自动接话后，普通真人输入和成功的 AI 回复可按额度继续轮转。私聊沿用对方 AI 触发，普通连续输入默认合并等待 800ms。一个触发消息以 aiResponses 数组记录各 AI 的任务状态，目标失败不把错误伪装成回答，也不覆盖其他 AI 任务。
 
@@ -26,7 +26,7 @@
 
 节点失联会中断当前流，关闭聊天客户端不停止独立 Agent。节点重启先查询持久检查点对应的云端任务；已开始但结果不明按 uncertain 收尾，绝不再次打开模型流，本地已有 final 只按原 ID 和内容重交。服务端重启同样把旧 running 标 uncertain，保留有效片段，不重新排队。模型已经收到的调用可能仍产生费用，不能承诺回滚。
 
-摘要任务由节点按 AI/窗口独立调度，使用独立摘要槽，与聊天共用节点整体持久预算。调用前先保存开始意图并取得云端持久确认；正文只在节点保存，云端只记来源、版本、状态与用量。重启将未完成摘要标为中断并补交终态，不再次调用模型；源变化或设置变更阻止旧结果写为可用摘要。详细分段和权限见[意识系统](consciousness.md#第-3-步第二批的接入方式)。
+摘要任务由节点按 AI/窗口独立调度，使用独立摘要槽，与聊天共用节点整体持久预算。调用前先保存开始意图并取得云端持久确认；正文只在节点保存，云端只记来源、版本、状态与用量。重启将未完成摘要标为中断并补交终态，不再次调用模型；源变化或设置变更阻止旧结果写为可用摘要。详细分段和权限见[意识系统](consciousness.md#记忆与摘要管理)。
 
 ## 云端与节点的执行分工
 
@@ -65,6 +65,6 @@
 
 模型名、provider、协议与思考强度由 Agent 严格校验，不替换不存在的模型。管理员保存的 temperature/max_tokens 属于该 AI 的档案；留空分别使用服务默认温度与意识系统输出预算，显式上限按原值预留并校验容量。节点使用同一配置快照解析模型、组装上下文和调用供应商，普通更新只影响新运行。
 
-图片按精确 provider/model 的 supported/unsupported/unknown 能力检查完整请求，含历史及群引用；明确不支持时不调用模型，未知可以尝试，不按模型名猜测或静默丢图。图片能力声明不等于真实识图验收。供应商差异集中在 `agent/ai-client` 的协议适配器与共享 SSE 分帧，业务和客户端不构造供应商请求。
+图片按精确 provider/model 的 supported/unsupported/unknown 能力检查完整请求，含历史及群引用；明确不支持时不调用模型，未知可以尝试，不按模型名猜测或静默丢图。图片能力声明不等于真实识图验收。供应商差异集中在 `crates/ai-client` 的协议适配器与共享 SSE 分帧，业务和客户端不构造供应商请求。
 
 当前社交执行未开放工具、Shell 或任意文件操作；旧工具 worker 随宿主退役，不作为桌面或节点运行入口。模型输出不授予新权限，运行终态及已保存片段不能被迟到结果覆盖。

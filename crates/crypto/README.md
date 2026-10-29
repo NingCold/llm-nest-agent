@@ -4,4 +4,4 @@
 
 每台设备拥有自己的身份。更换设备时，恢复历史资料并建立新身份，不复制正在使用的设备数据库。模型 Key、节点连接凭据和未完成的模型调用都不随恢复资料转移。
 
-使用范围和恢复规则见[加密设计](../../docs/design/encryption.md)，接入方式见[协议约定](../../docs/design/crypto-contract.md)。
+使用范围和恢复规则见[加密设计](https://github.com/NingCold/llm-nest-server/blob/main/docs/design/encryption.md)，接入方式见[协议约定](https://github.com/NingCold/llm-nest-server/blob/main/docs/design/crypto-contract.md)。

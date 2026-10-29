@@ -1,58 +1,39 @@
-"""Check client, cloud and Agent source boundaries using Cargo's dependency graph."""
-import json
+"""Check independent Agent workspace and dependency boundaries without fetching."""
 from pathlib import Path
-import subprocess
+import re
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def main():
-    metadata = json.loads(subprocess.check_output(
-        ["cargo", "metadata", "--no-deps", "--format-version", "1", "--locked"],
-        cwd=ROOT, text=True, encoding="utf-8",
-    ))
-    packages = {p["name"]: p for p in metadata["packages"]}
-    retired = {"runtime", "storage", "tools", "social-feature", "web-server"}
-    if packages.keys() & retired:
-        raise SystemExit("Retired host packages remain in the workspace")
-    forbidden = {
-        "connector": {"runtime", "storage", "ai-client", "builtin-agent", "tools",
-                      "social-feature", "web-server", "cloud-server", "tauri-frontend", "llmn-crypto"},
-        "builtin-agent": {"runtime", "storage", "connector", "social-feature",
-                          "web-server", "cloud-server", "tauri-frontend"},
-        "cloud-server": {"runtime", "storage", "ai-client", "builtin-agent", "tools",
-                         "social-feature", "web-server", "tauri-frontend", "llmn-crypto"},
-        "llmn-crypto": {"runtime", "storage", "connector", "ai-client", "builtin-agent",
-                        "tools", "social-feature", "web-server", "cloud-server", "tauri-frontend"},
-        "agent-node": {"runtime", "storage", "social-feature", "web-server",
-                       "cloud-server", "tauri-frontend"},
-        "tauri-frontend": {"runtime", "storage", "ai-client", "builtin-agent", "tools",
-                           "social-feature", "web-server", "cloud-server", "llmn-crypto", "common"},
-    }
-    for start, excluded in forbidden.items():
-        pending = [(start, [start])]
-        visited = set()
-        while pending:
-            name, chain = pending.pop()
-            if name in excluded:
-                raise SystemExit("Forbidden dependency: " + " -> ".join(chain))
-            if name in visited:
-                continue
-            visited.add(name)
-            for dependency in packages[name]["dependencies"]:
-                target = dependency["name"]
-                if dependency.get("path") and target in packages:
-                    pending.append((target, chain + [target]))
-        print(f"{start}: dependency boundary OK")
-
-    prepare = (ROOT / "client/desktop/scripts/prepare-agent.mjs").read_text(encoding="utf-8")
-    if any(token in prepare for token in ("execFile", "spawn(", "cargo build", "target/debug", "target/release")):
-        raise SystemExit("Desktop artifact preparation must not build or locate Agent source output")
-    docker = (ROOT / "server/cloud/Dockerfile").read_text(encoding="utf-8")
-    for line in docker.splitlines():
-        if line.startswith("COPY ") and any(token in line for token in ("client/", "agent/", "crates/runtime", "crates/storage")):
-            raise SystemExit("Cloud Docker build includes another runtime or client source")
-    print("Desktop Agent artifact and cloud build-context boundaries OK")
+    workspace = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["workspace"]
+    members = {"node", "crates/common", "crates/ai-client", "crates/core", "crates/crypto"}
+    assert set(workspace["members"]) == members, "Agent workspace must contain exactly five packages"
+    dependencies = workspace["dependencies"]
+    social, connector = (dependencies[name] for name in ("social", "connector"))
+    for dependency in (social, connector):
+        assert dependency["git"] == "https://github.com/NingCold/llm-nest-server.git"
+        assert re.fullmatch(r"[0-9a-f]{40}", dependency["rev"]), "Exact server revision required"
+        assert not {"path", "branch", "tag"} & dependency.keys()
+    assert social["rev"] == connector["rev"], "Protocol packages must share a revision"
+    forbidden = {"runtime", "storage", "social-feature", "web-server", "cloud-server", "tauri-frontend", "tools"}
+    for member in sorted(members):
+        manifest = ROOT / member / "Cargo.toml"
+        package = tomllib.loads(manifest.read_text(encoding="utf-8"))
+        for section in ("dependencies", "dev-dependencies", "build-dependencies"):
+            for name, dependency in package.get(section, {}).items():
+                assert name not in forbidden, f"Forbidden dependency: {member} -> {name}"
+                if member == "crates/core":
+                    assert name not in {"connector", "rusqlite", "llmn-crypto"}
+                if member == "crates/crypto":
+                    assert name not in {"connector", "ai-client", "builtin-agent", "agent-node"}
+                if isinstance(dependency, dict) and "path" in dependency:
+                    assert (manifest.parent / dependency["path"]).resolve().is_relative_to(ROOT), "External path dependency"
+        print(f"{member}: dependency boundary OK")
+    for dependency in dependencies.values():
+        if isinstance(dependency, dict) and "path" in dependency:
+            assert (ROOT / dependency["path"]).resolve().is_relative_to(ROOT), "External workspace path"
 
 
 if __name__ == "__main__":

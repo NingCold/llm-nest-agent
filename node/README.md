@@ -40,9 +40,9 @@ cargo run -p agent-node -- profile C:\private\llmn-agent <AI-ID> C:\private\prof
 
 正常排队不算模型失败。云端任务列表只提供当前可开始的队首；若开始时明确收到 HTTP 409 `conversation_busy` 或 `task_not_ready`，节点在一个事务中撤销本次尚未开始的意图与预算预留，释放模型槽，等待通知或下一轮任务读取。此例外不适用于未知网络失败或任何已开始调用，原有不重复调用和预算不退还规则继续生效。
 
-记忆与窗口摘要按 AI 分开保存在 `node.sqlite`。节点在线时，可从聊天或联系人详情维护显式记忆；AI 管理员还能为它在当前窗口选择专用模型，开启或手动整理摘要。摘要默认关闭，使用同一节点预算，最近 12 条原文保留，每段最多 32 条。群话题带入私聊时，节点读取获准引用的原文，并结合该 AI 自己的资料。完整操作见[使用指南](../../docs/usage.md#记忆摘要和群话题接续)。
+记忆与窗口摘要按 AI 分开保存在 `node.sqlite`。节点在线时，可从聊天或联系人详情维护显式记忆；AI 管理员还能为它在当前窗口选择专用模型，开启或手动整理摘要。摘要默认关闭，使用同一节点预算，最近 12 条原文保留，每段最多 32 条。群话题带入私聊时，节点读取获准引用的原文，并结合该 AI 自己的资料。完整操作见[使用指南](https://github.com/NingCold/llm-nest/blob/main/docs/usage.md#记忆摘要和群话题接续)。
 
-编辑、遗忘和来源变化会停止依赖旧资料的回复。节点重连先补齐来源变化，再使用记忆和摘要；未完成摘要在重启后标为中断，不自动重复调用模型。更换运行设备时，按下方步骤导出资料包并在新节点导入；旧本地版本的数据见[迁移指南](../../docs/migration.md)。
+编辑、遗忘和来源变化会停止依赖旧资料的回复。节点重连先补齐来源变化，再使用记忆和摘要；未完成摘要在重启后标为中断，不自动重复调用模型。更换运行设备时，按下方步骤导出资料包并在新节点导入；旧本地版本的数据见[迁移指南](https://github.com/NingCold/llm-nest/blob/main/docs/migration.md)。
 
 普通文件只进入名称、类型和大小说明；图片经授权接口读取后作为原生图片材料，明确不支持图片的模型在调用前拒绝。当前没有工具执行；角色和模型参数可以由上述本机档案命令或在线管理入口调整。
 
@@ -68,7 +68,7 @@ cargo run -p agent-node -- profile C:\private\llmn-agent <AI-ID> C:\private\prof
 
 私聊和群聊可开启加密。节点验证发送者身份后读取消息和附件，并将角色、模型、记忆和各窗口摘要作为密文同步；云端保存后，由当前节点另行确认应用。恢复文件和模型 Key 留在自己的设备。
 
-使用 `crypto-init <directory> <AI id>` 建立身份，`crypto-status` 查看状态；`crypto-trust` 需独立核对账号 master、设备 Ed25519 和 Curve25519 指纹。`crypto-export-recovery` 保存私有恢复文件，换节点用 `crypto-recover` 恢复；仅登录或重新配对不能获得历史解密能力。向新管理员分享历史前，先确认当前管理员身份与设备信任，再用 `crypto-authorize-admin` 明确授权。恢复文件不提交、分享或交给服务管理员。参数与传输契约见[加密契约](../../docs/design/crypto-contract.md)，联调状态见[当前安排](../../docs/project/current.md)。
+使用 `crypto-init <directory> <AI id>` 建立身份，`crypto-status` 查看状态；`crypto-trust` 需独立核对账号 master、设备 Ed25519 和 Curve25519 指纹。`crypto-export-recovery` 保存私有恢复文件，换节点用 `crypto-recover` 恢复；仅登录或重新配对不能获得历史解密能力。向新管理员分享历史前，先确认当前管理员身份与设备信任，再用 `crypto-authorize-admin` 明确授权。恢复文件不提交、分享或交给服务管理员。参数与传输契约见[加密契约](https://github.com/NingCold/llm-nest-server/blob/main/docs/design/crypto-contract.md)，联调状态见[当前安排](https://github.com/NingCold/llm-nest/blob/main/docs/project/current.md)。
 
 桌面绑定新 AI 后，还需准备该 AI 自己的加密身份。当前这部分使用安装版自带的 `agent/llmn-agent.exe`，尚无桌面设置入口：
 
@@ -90,7 +90,7 @@ $nodeDirectory = "C:\path\to\desktop-node"
 
 桌面节点目录位于数据目录的 `desktop-agents/<服务器地址的 SHA256>/<真人账号 ID>`，默认数据目录为用户目录下的 `.llmn`，设置 `LLMN_DATA_DIR` 时使用该位置。恢复文件不要放进仓库或发到聊天中，并另行安全备份。
 
-旧节点资料使用 `crypto-migration-preview <directory> <AI id>` 预览，再用 `crypto-migrate <directory> <AI id> <digest>` 转为云端密文资料。先备份、停止节点并完成身份和恢复准备；转换不会调用模型重写摘要，已有云端资料与遗忘记录优先。完整步骤见[迁移说明](../../docs/migration.md#现有云端记录转为加密)。迁移历史会保留原作者，并明确标为由迁移者转换的旧记录。
+旧节点资料使用 `crypto-migration-preview <directory> <AI id>` 预览，再用 `crypto-migrate <directory> <AI id> <digest>` 转为云端密文资料。先备份、停止节点并完成身份和恢复准备；转换不会调用模型重写摘要，已有云端资料与遗忘记录优先。完整步骤见[迁移说明](https://github.com/NingCold/llm-nest/blob/main/docs/migration.md#现有云端记录转为加密)。迁移历史会保留原作者，并明确标为由迁移者转换的旧记录。
 
 ### 同机文字私聊
 

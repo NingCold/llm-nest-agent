@@ -1,16 +1,6 @@
 [workspace]
 resolver = "2"
-members = [
-    "crates/common",
-    "crates/social",
-    "agent/ai-client",
-    "agent/core",
-    "agent/crypto",
-    "agent/node",
-    "connector",
-    "server/cloud",
-    "client/desktop/src-tauri",
-]
+members = ["crates/common", "crates/ai-client", "crates/core", "crates/crypto", "node"]
 
 [workspace.package]
 version = "0.1.1-alpha.11"
@@ -36,13 +26,15 @@ uuid = { version = "1", features = ["v4", "serde"] }
 path = "crates/common"
 
 [workspace.dependencies.ai-client]
-path = "agent/ai-client"
+path = "crates/ai-client"
 
 [workspace.dependencies.social]
-path = "crates/social"
+git = "https://github.com/NingCold/llm-nest-server.git"
+rev = "cda5facfc441890cbc053db8374ea2141580689d"
 
 [workspace.dependencies.builtin-agent]
-path = "agent/core"
+path = "crates/core"
 
 [workspace.dependencies.connector]
-path = "connector"
+git = "https://github.com/NingCold/llm-nest-server.git"
+rev = "cda5facfc441890cbc053db8374ea2141580689d"

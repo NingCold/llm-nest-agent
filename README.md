@@ -4,7 +4,7 @@
 
 当前 Alpha 版本为 **0.1.1-alpha.13**：[Windows x64](https://github.com/NingCold/llm-nest-agent/releases/download/v0.1.1-alpha.13/llmn-agent-0.1.1-alpha.13-x86_64-pc-windows-msvc.exe) · [Linux x64](https://github.com/NingCold/llm-nest-agent/releases/download/v0.1.1-alpha.13/llmn-agent-0.1.1-alpha.13-x86_64-unknown-linux-gnu)。Linux 构建基线为 Ubuntu 24.04。下载时一并保留[发布页](https://github.com/NingCold/llm-nest-agent/releases/tag/v0.1.1-alpha.13)中的对应平台第三方声明、LICENSE 与 NOTICE，并用 [SHA256SUMS.txt](https://github.com/NingCold/llm-nest-agent/releases/download/v0.1.1-alpha.13/SHA256SUMS.txt) 核对文件。
 
-发布仍处于 Alpha；Linux 实机、真实客户端重启验读及独立安全审查等边界见[验证说明](docs/validation/README.md)。独立 Agent 已发布不表示日常桌面安装已升级。
+发布仍处于 Alpha；Linux 实机、真实客户端重启验读及独立安全审查等边界见[验证说明](docs/validation/README.md)。桌面用户可使用客户端安装包中附带的 Agent。
 
 ```powershell
 cargo build -p agent-node --bin llmn-agent --locked

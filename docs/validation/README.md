@@ -4,7 +4,7 @@
 
 2026-10-29，[0.1.1-alpha.13](https://github.com/NingCold/llm-nest-agent/releases/tag/v0.1.1-alpha.13) 已公开，tag 源码为 `a78f729b`；随后 main 的 `fc9a587` 仅修复 CI Windows 工具解压路径。Windows/Linux Checks 均通过，[Artifacts 运行 40889208608](https://github.com/NingCold/llm-nest-agent/actions/runs/40889208608) 成功。已核对全部 8 个发布资产：两个平台程序及各自声明、manifest、SHA256SUMS、LICENSE、NOTICE；程序及声明的 SHA-256 与清单一致，LICENSE/NOTICE 与 tag 内原文字节一致，本机 Windows 程序的 `--version` 实际返回 `llmn-agent 0.1.1-alpha.13`。
 
-Linux 构建基线为 Ubuntu 24.04，构建通过不等于 Linux 实机运行已验收。该版本仍为 Alpha；独立安全审查、真实客户端重启验读与其他未覆盖平台继续保留。日常桌面尚未升级，客户端安装包及 AppImage 内 Agent 字节一致性另行验证，本次发布不表示已部署到日常环境。
+Linux 构建基线为 Ubuntu 24.04。客户端 `alpha.13` 的 deb/AppImage 已校验内嵌 Agent 原始字节，本机 Windows 已安装同版客户端并核对 Agent 的版本与摘要。实际界面已连接云端，但本次未登录、解锁或重新运行日常节点。该版本仍为 Alpha；Linux 人工操作、真实客户端重启后的历史验读与独立安全审查继续保留。
 
 ## 本仓检查
 

@@ -641,7 +641,10 @@ async fn prepare_inner(
             _ => None,
         })
         .collect();
-    let reserve = resolved.spec.context_window.unwrap_or(8192) as u64;
+    let reserve = generation::request_budget(
+        &prepared.messages,
+        options.max_tokens.expect("output budget allocated"),
+    );
     // The request and client are frozen for the entire invocation.
     Ok((
         ChatRequest {
@@ -730,19 +733,22 @@ mod tests {
         }
     }
     fn router() -> ModelRouter {
-        let providers = toml::from_str(
+        router_with_window(8192)
+    }
+    fn router_with_window(window: u32) -> ModelRouter {
+        let providers = toml::from_str(&format!(
             r#"
 [test]
 protocol="openai"
 base_url="https://example.invalid"
-api_key={env="UNUSED_TEST_KEY"}
+api_key={{env="UNUSED_TEST_KEY"}}
 [test.models.small]
 model="small"
-context_window=8192
+context_window={window}
 max_tokens=4096
 image_input=false
-"#,
-        )
+"#
+        ))
         .unwrap();
         ModelRouter::new(&providers).unwrap()
     }
@@ -776,9 +782,19 @@ image_input=false
             input_ids: vec![first.id.clone(), trigger],
         };
         material.messages.insert(0, first);
-        let (request, _) = prepare(&api, &router(), &profile(), material.clone())
-            .await
-            .unwrap();
+        let (request, reserved) = prepare(
+            &api,
+            &router_with_window(1_000_000),
+            &profile(),
+            material.clone(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            reserved,
+            generation::request_budget(&request.messages, 1024)
+        );
+        assert!(reserved < 8192);
         let text = format!("{:?}", request.messages);
         assert!(text.contains("first necessary input") && text.contains("last necessary input"));
         material.messages[0].text = "required".repeat(2000);
@@ -900,8 +916,32 @@ image_input=false
         assert!(text.contains("Be helpful"));
         assert!(text.contains("readme.txt"));
         assert!(text.contains("34"));
-        assert_eq!(reserved, 8192);
+        assert_eq!(
+            reserved,
+            generation::request_budget(&request.messages, request.options.max_tokens.unwrap())
+        );
+        assert!(reserved < 8192);
         assert!(request.tools.is_empty());
+    }
+    #[tokio::test]
+    async fn million_token_window_does_not_inflate_cloud_or_direct_reservation() {
+        let api = NodeClient::new("http://127.0.0.1:1", "test", None).unwrap();
+        let router = router_with_window(1_000_000);
+        let material = materials();
+        let (request, cloud) = prepare(&api, &router, &profile(), material.clone())
+            .await
+            .unwrap();
+        let (_, direct, _, _, _) =
+            prepare_direct(&api, &router, &profile(), material.clone(), None)
+                .await
+                .unwrap();
+        assert_eq!(cloud, generation::request_budget(&request.messages, 1024));
+        assert_eq!(cloud, direct);
+        assert!(cloud < 8192);
+        let mut configured = profile();
+        configured.max_tokens = Some(2048);
+        let (_, larger) = prepare(&api, &router, &configured, material).await.unwrap();
+        assert_eq!(larger - cloud, 1024);
     }
     #[tokio::test]
     async fn strict_selection_and_unsupported_image_fail_before_network() {

@@ -852,10 +852,8 @@ async fn make_segment(
             .map(|m| crate::context::text_message(&c.id, m))
             .collect::<Result<Vec<_>>>()?;
         let prompt = builtin_agent::summary::summary_prompt(&converted);
-        let estimate = serde_json::to_vec(&prompt)?.len() as u64;
-        if estimate + binding.max_tokens as u64
-            <= resolved.spec.context_window.unwrap_or(8192) as u64
-        {
+        let estimate = builtin_agent::generation::request_budget(&prompt, binding.max_tokens);
+        if estimate <= resolved.spec.context_window.unwrap_or(8192) as u64 {
             break;
         }
         messages.pop();
@@ -1078,24 +1076,15 @@ async fn run_summary(
     let router = ModelRouter::new(&config.providers)?;
     let (resolved, options) = summary_options(&router, &record.binding)?;
     let prompt = builtin_agent::summary::summary_prompt(&messages);
-    let estimate = prompt
-        .iter()
-        .map(|m| serde_json::to_vec(m).map(|v| v.len() as u64))
-        .collect::<std::result::Result<Vec<_>, _>>()?
-        .into_iter()
-        .sum::<u64>();
+    let estimate = builtin_agent::generation::request_budget(
+        &prompt,
+        options.max_tokens.expect("summary output budget allocated"),
+    );
     ensure!(
-        estimate + record.binding.max_tokens as u64
-            <= resolved.spec.context_window.unwrap_or(8192) as u64,
+        estimate <= resolved.spec.context_window.unwrap_or(8192) as u64,
         "summary_budget_exceeded"
     );
-    store.reserve_summary(
-        &binding.ai,
-        cid,
-        record,
-        resolved.spec.context_window.unwrap_or(8192) as u64,
-        config,
-    )?;
+    store.reserve_summary(&binding.ai, cid, record, estimate, config)?;
     api.announce(&scope).await?;
     let confirm = crate::while_connected_with(
         socket,

@@ -191,7 +191,16 @@ api_key = {{ env = "API_KEY_CHATECNU" }}
                 );
             }
             "crypto-init" => println!("{}", crypto::enroll(&api, &store, &config, &binding).await?),
-            "crypto-status" => println!("{}", crypto::status(&store, ai).await?),
+            "crypto-status" => {
+                let mut status = crypto::status(&store, ai).await?;
+                if let Some(account) = args.get(4) {
+                    let device = args.get(5).context("请指定待核对的设备 ID")?;
+                    status["peerTrusted"] = crypto::peer_trusted(&store, ai, account, device)
+                        .await?
+                        .into();
+                }
+                println!("{status}");
+            }
             "crypto-export-recovery" => {
                 let path = args.get(4).context("请指定新的恢复文件保存位置")?;
                 crypto::export_recovery(&api, &store, ai, Path::new(path)).await?;

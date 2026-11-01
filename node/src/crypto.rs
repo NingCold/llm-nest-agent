@@ -1481,27 +1481,56 @@ pub async fn enroll(
             body: json!({"device_keys":{own.clone():[]}}),
         })
         .await?;
-    ensure!(
-        existing["master_keys"].get(&own).is_none(),
-        "existing AI encryption identity requires trusted-device recovery"
-    );
+    if let Some(remote) = existing["master_keys"].get(&own) {
+        let local = status(store, &binding.ai).await?;
+        ensure!(
+            s.device
+                .machine()
+                .cross_signing_status()
+                .await
+                .is_complete()
+                && local["master"]["keys"] == remote["keys"],
+            "existing AI encryption identity requires trusted-device recovery"
+        );
+    }
     bootstrap_device(api, store, &s).await?;
-    let mut bytes = [0; 32];
-    rand::thread_rng().fill_bytes(&mut bytes);
-    let key = llmn_crypto::matrix_sdk_crypto::store::types::BackupDecryptionKey::from_bytes(&bytes);
     let backup = s.device.machine().backup_machine();
+    // A retry resumes the same identity and backup, including an interrupted upload.
+    let saved = backup.get_backup_keys().await?;
+    let (key, version) = match (saved.decryption_key, saved.backup_version) {
+        (Some(key), Some(version)) => (key, version),
+        (None, None) => {
+            let mut bytes = [0; 32];
+            rand::thread_rng().fill_bytes(&mut bytes);
+            let key = llmn_crypto::matrix_sdk_crypto::store::types::BackupDecryptionKey::from_bytes(
+                &bytes,
+            );
+            let version = crate::id();
+            backup
+                .save_decryption_key(Some(key.clone()), Some(version.clone()))
+                .await?;
+            (key, version)
+        }
+        _ => anyhow::bail!("incomplete history backup identity; restore the saved recovery file"),
+    };
     let mut info = key.to_backup_info();
     backup.sign_backup(&mut info).await?;
     let mut metadata = serde_json::to_value(info)?;
-    let version = crate::id();
     metadata["version"] = json!(version);
     metadata["deviceId"] = json!(s.device.machine().device_id());
     metadata["expectedVersion"] = serde_json::Value::Null;
-    backup
-        .save_decryption_key(Some(key.clone()), Some(version.clone()))
-        .await?;
     store.db.execute("INSERT INTO crypto_control_outbox(ai,kind,json) VALUES(?1,'backup',?2) ON CONFLICT(ai,kind) DO NOTHING",params![binding.ai,metadata.to_string()])?;
-    api.crypto_save_backup(&metadata).await?;
+    match api.crypto_backup().await {
+        Ok(current) => ensure!(
+            current["version"] == version
+                && current["auth_data"]["public_key"] == key.megolm_v1_public_key().to_base64(),
+            "backup identity mismatch"
+        ),
+        Err(NodeError::Api { status: 404, .. }) => {
+            api.crypto_save_backup(&metadata).await?;
+        }
+        Err(error) => return Err(error.into()),
+    }
     store.db.execute(
         "DELETE FROM crypto_control_outbox WHERE ai=?1 AND kind='backup'",
         [&binding.ai],
@@ -1513,6 +1542,11 @@ pub async fn enroll(
     status(store, &binding.ai).await
 }
 pub async fn status(store: &Store, ai: &str) -> Result<serde_json::Value> {
+    if !enrolled(store, ai)? {
+        return Ok(
+            json!({"deviceId":null,"ed25519":null,"curve25519":null,"master":null,"identityReady":false,"recoverySaved":false,"peerTrusted":false,"ready":false}),
+        );
+    }
     let s = session(store, ai).await?;
     let keys = s.device.machine().identity_keys();
     let own = s
@@ -1526,9 +1560,50 @@ pub async fn status(store: &Store, ai: &str) -> Result<serde_json::Value> {
         }
         _ => serde_json::Value::Null,
     };
+    let backup = s
+        .device
+        .machine()
+        .backup_machine()
+        .get_backup_keys()
+        .await?;
+    let identity_ready = !master.is_null()
+        && s.device
+            .machine()
+            .cross_signing_status()
+            .await
+            .is_complete()
+        && backup.decryption_key.is_some()
+        && backup.backup_version.is_some();
+    let recovery_saved: bool = store.db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM crypto_recovery_ready WHERE ai=?1)",
+        [ai],
+        |r| r.get(0),
+    )?;
     Ok(
-        json!({"deviceId":s.device.machine().device_id(),"ed25519":keys.ed25519.to_base64(),"curve25519":keys.curve25519.to_base64(),"master":master,"ready":capable(store,ai)?}),
+        json!({"deviceId":s.device.machine().device_id(),"ed25519":keys.ed25519.to_base64(),"curve25519":keys.curve25519.to_base64(),"master":master,"identityReady":identity_ready,"recoverySaved":recovery_saved,"peerTrusted":false,"ready":capable(store,ai)?}),
     )
+}
+pub async fn peer_trusted(store: &Store, ai: &str, account: &str, device: &str) -> Result<bool> {
+    if !enrolled(store, ai)? {
+        return Ok(false);
+    }
+    let s = session(store, ai).await?;
+    let user = llmn_crypto::ruma::UserId::parse(user_id(account))?;
+    let Some(identity) = s.device.machine().get_identity(&user, None).await? else {
+        return Ok(false);
+    };
+    let Some(target) = s
+        .device
+        .machine()
+        .get_device(&user, device.into(), None)
+        .await?
+    else {
+        return Ok(false);
+    };
+    Ok(identity.is_verified()
+        && target.is_verified()
+        && target.is_cross_signed_by_owner()
+        && !target.is_deleted())
 }
 pub async fn export_recovery(
     api: &NodeClient,
@@ -2788,6 +2863,21 @@ mod tests {
     use super::*;
     fn store() -> Store {
         Store::open(std::path::Path::new(":memory:")).unwrap()
+    }
+    #[tokio::test]
+    async fn setup_status_does_not_create_a_device_or_trust_an_unknown_peer() {
+        let store = store();
+        let ai = crate::id();
+        let state = status(&store, &ai).await.unwrap();
+        assert!(state["deviceId"].is_null());
+        assert_eq!(state["identityReady"], false);
+        assert_eq!(state["recoverySaved"], false);
+        assert!(
+            !peer_trusted(&store, &ai, &crate::id(), &crate::id())
+                .await
+                .unwrap()
+        );
+        assert!(!enrolled(&store, &ai).unwrap());
     }
     #[test]
     fn encrypted_group_keeps_separate_ai_snapshots_and_rejects_downgrade() {

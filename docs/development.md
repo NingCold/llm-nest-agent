@@ -12,11 +12,13 @@ python scripts/check-boundaries.py
 
 运行配置用独立临时节点，见[配置](configuration.md)。catalog 与 --version 不读配置、凭据、不联网或创建数据；check 严格校验候选配置。
 
+本地额度按本次最终组装输入的保守估算（UTF-8 字节、消息开销和图片估算）加配置输出上限预留，输出上限包含必要推理预算；不按模型完整上下文容量扣除。云端、同机、自动接话与摘要使用同一估算规则，摘要分段也按该规则检查可行性。这是本地准入额度，不是供应商真实 Token 用量或账单；持久计数和开始后结果未知时不自动重试、不返还预留的规则保持不变。
+
 [检查与验证范围](validation/README.md) · [修改约定](../AGENTS.md)
 
 ## 发布产物
 
-当前已公开版本为 [0.1.1-alpha.13](https://github.com/NingCold/llm-nest-agent/releases/tag/v0.1.1-alpha.13)，Agent 版本由本仓 Cargo.toml 独立维护。发布流程支持已有版本 tag；手动运行填写 release_tag 时构建该 tag，经版本和提交核验后生成双平台程序、统一 manifest、SHA256SUMS.txt 和草稿 Release。只有维护者公开草稿后，固定 tag URL 才可供客户端正式消费。不填写 tag 时仅生成临时验收产物。流程不替维护者创建 tag 或自动公开版本，见[验证说明](validation/README.md)。
+当前源码版本为 `0.1.1-alpha.14`，尚未发布；已公开版本为 [0.1.1-alpha.13](https://github.com/NingCold/llm-nest-agent/releases/tag/v0.1.1-alpha.13)，Agent 版本由本仓 Cargo.toml 独立维护。发布流程支持已有版本 tag；手动运行填写 release_tag 时构建该 tag，经版本和提交核验后生成双平台程序、统一 manifest、SHA256SUMS.txt 和草稿 Release。只有维护者公开草稿后，固定 tag URL 才可供客户端正式消费。不填写 tag 时仅生成临时验收产物。流程不替维护者创建 tag 或自动公开版本，见[验证说明](validation/README.md)。
 
 Windows MSVC 的 `llmn-agent` 由 `node/build.rs` 显式保留 2 MiB 主线程栈，以容纳 Matrix SDK 调试构建中的 Olm 接收链。仅该二进制使用 `/STACK:2097152`，初始提交量仍为链接器默认 4096 字节；不设置全局 Rust 栈环境变量，不改变其他平台或后台任务的栈配置。
 

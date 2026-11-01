@@ -9,6 +9,16 @@ use crate::Result;
 use ai_client::{ResolvedSelection, generation::GenerationLimits};
 use common::GenerationOptions;
 
+/// Local admission estimate, not provider usage: complete assembled input plus
+/// the configured output ceiling (which already includes required thinking).
+pub fn request_budget(messages: &[common::Message], output_tokens: u32) -> u64 {
+    messages
+        .iter()
+        .map(|message| u64::from(crate::consciousness::estimate(message)))
+        .sum::<u64>()
+        + u64::from(output_tokens)
+}
+
 /// Reserve at least one input token; the consciousness service checks the actual prompt.
 pub fn limits(resolved: &ResolvedSelection) -> GenerationLimits {
     let mut limits = resolved.generation_limits();
@@ -32,6 +42,19 @@ mod tests {
     use ai_client::{
         ModelSelection, ModelSpec, Protocol, ReasoningCapability, ReasoningEffort, ReasoningFormat,
     };
+
+    #[test]
+    fn request_budget_tracks_assembled_input_and_output_ceiling() {
+        let messages = vec![common::Message::new(
+            common::Role::User,
+            vec![common::ContentPart::Text("你好".into())],
+        )];
+        assert_eq!(request_budget(&messages, 1024), 6 + 16 + 1024);
+        assert_eq!(request_budget(&messages, 5120), 6 + 16 + 5120);
+        let mut longer = messages.clone();
+        longer.extend(messages);
+        assert_eq!(request_budget(&longer, 1024), 2 * (6 + 16) + 1024);
+    }
 
     #[test]
     fn independent_defaults_and_explicit_caps_use_the_same_context_budget() {
@@ -78,7 +101,9 @@ mod tests {
         resolved.selection.reasoning_effort = Some(ReasoningEffort::Medium);
         binding.temperature = None;
         binding.max_tokens = None;
-        assert_eq!(options(&binding, &resolved).unwrap().max_tokens, Some(5120));
+        let thinking = options(&binding, &resolved).unwrap();
+        assert_eq!(thinking.max_tokens, Some(5120));
+        assert_eq!(request_budget(&[], thinking.max_tokens.unwrap()), 5120);
         binding.max_tokens = Some(4096);
         assert!(options(&binding, &resolved).is_err());
     }

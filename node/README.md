@@ -34,7 +34,7 @@ cargo run -p agent-node -- profile C:\private\llmn-agent <AI-ID> C:\private\prof
 
 未启用加密时，修改后提升 `revision`，下一次启动与新任务使用保存后的设置。加密启用后通过管理页保存角色与模型，等待云端保存和节点应用；旧本机档案命令的修改不能替代密文同步。空温度和输出上限使用模型默认温度与意识系统预算。运行期间配置冻结，不在飞行请求中切换供应商。
 
-云端任务通过每个绑定的 WSS 连接接入，所有 AI 共享 4 个社交模型调用槽，摘要独立使用 1 个槽；同一 AI 仍按顺序执行；单次调用最长 120 秒。每日次数和完整上下文 token 容量先在 SQLite 预留，已开始后的失败不返还；墙钟回拨不重开旧日预算。云端任务在模型调用前先保存开始意图、获得云端确认，再保存确认。重启遇到不明确的开始只报告 uncertain，绝不重调模型；已保存 final 可原样重发。云端任务在节点断线时停止生成，源编辑、取消或撤权由服务端复核并阻止失效结果提交。
+云端任务通过每个绑定的 WSS 连接接入，所有 AI 共享 4 个社交模型调用槽，摘要独立使用 1 个槽；同一 AI 仍按顺序执行；单次调用最长 120 秒。每日次数和本次请求的估算 Token 额度先在 SQLite 预留，已开始后的失败不返还；墙钟回拨不重开旧日预算。云端任务在模型调用前先保存开始意图、获得云端确认，再保存确认。重启遇到不明确的开始只报告 uncertain，绝不重调模型；已保存 final 可原样重发。云端任务在节点断线时停止生成，源编辑、取消或撤权由服务端复核并阻止失效结果提交。
 
 节点协议为 v4：材料包含真实窗口种类、名称、版本和当前成员，以及每条消息的实际发送者、回复目标和结构化提及。各次请求按目标 AI 与窗口独立构造，不把所有其他成员都当成一个私聊对方。云端按持久任务顺序串行同群发言，并将前序 AI 已提交回答提供给后续任务；节点只使用本次取得的冻结材料。
 
@@ -50,9 +50,9 @@ cargo run -p agent-node -- profile C:\private\llmn-agent <AI-ID> C:\private\prof
 
 本地无付费测试：`cargo test -p agent-node --locked`。
 
-节点当前每轮聊天按所选模型的完整 `context_window` 预留 `daily_tokens`，不是按本次实际输入或输出用量扣减；设置较小的 `max_tokens` 只限制输出，不能降低这份预留。云端和同机聊天共用节点总额度，默认 `daily_tokens = 1048576`；例如模型上下文为 1024000 时，默认总额度只够一轮。这是软件内部的额度，供应商账单仍以其实际计费为准。
+每轮按最终组装输入的保守估算加配置输出上限预留 `daily_tokens`。输入估算包括 UTF-8 字节、消息开销和图片估算，输出上限包含必要推理预算；`context_window` 用于检查请求容量，不按完整窗口预留。输入材料相同时，降低 `max_tokens` 会降低预留量，但仍须满足模型的必要推理要求。云端、同机聊天和摘要共用节点总额度，默认 `daily_tokens = 1048576`。这是软件内部的准入额度，不是供应商实际 Token 用量或账单。
 
-群自动接话与一次性约定另外按每个 AI、窗口、UTC 日预留完整模型容量，`profile.auto_daily_tokens` 可省略（默认 262144），范围 1024–4000000；该 AI 的 JSON 档案可独立调整。普通私聊和明确点名不扣这份自动额度，仍受节点顶层 `daily_calls/daily_tokens` 约束。两份额度与开始意图在同一 SQLite 事务预留；仅明确未开始的队列 409 同时释放它们，开始后失败、取消和重启不返还。预算拒绝区分 `token_limit`（窗口自动额度）、`node_call_limit`、`node_token_limit` 和 `budget_clock_rollback`。
+群自动接话与一次性约定另外按每个 AI、窗口、UTC 日预留同一份“本次输入估算加输出上限”额度，`profile.auto_daily_tokens` 可省略（默认 262144），范围 1024–4000000；可在桌面 AI 设置或该 AI 的 JSON 档案中独立调整。普通私聊和明确点名不扣这份自动额度，仍受节点顶层 `daily_calls/daily_tokens` 约束。两份额度与开始意图在同一 SQLite 事务预留；仅明确未开始的队列 409 同时释放它们，开始后失败、取消和重启不返还。预算拒绝区分 `token_limit`（窗口自动额度）、`node_call_limit`、`node_token_limit` 和 `budget_clock_rollback`。
 
 消息触发的 `inputIds` 均为必要材料，容量不足时明确失败。约定使用独立触发来源，把授权内容作为一次性约定提供给模型，可在聊天历史为空时执行；不会虚构真人消息，也不沿用共同群引用，当前窗口的有效记忆与摘要照常参与选材。
 
@@ -62,15 +62,19 @@ cargo run -p agent-node -- profile C:\private\llmn-agent <AI-ID> C:\private\prof
 
 桌面托管使用 `run-managed <directory>`。取得目录锁、校验并准备完成后，输出 `{type:"ready",instanceId}`；调用方收到这行确认后再查询状态。`status <directory>` 输出 `{type:"status",running,instanceId,aiIds}`，未运行时 instanceId 为 null，aiIds 只读查询已配对账号。`stop <directory>` 请求停止当前托管实例，随后可用 status 确认退出；普通命令行 run 不接受这种停止。关闭桌面不影响独立托管进程，系统休眠或关机会使本机 AI 离线。
 
-桌面节点以受限目录中的 `desktop-config.json` 为持久配置来源，配对和启动时会据此重建 `node.toml`，仅修改后者会被覆盖。桌面界面目前没有节点总 `daily_tokens` 的设置入口。
+桌面节点以受限目录中的 `desktop-config.json` 为持久配置来源，配对和启动时会据此重建 `node.toml`，仅修改后者会被覆盖。当前源码中，进入 **我的账号 → 我管理的 AI → 在这台电脑上运行**，停止节点后展开 **每日调用额度**，可调整 **每日最多调用次数 / 每日 token 额度**；每个 AI 的设置可调整每窗口每日自动额度。
 
 ### 加密设备与资料
 
 私聊和群聊可开启加密。节点验证发送者身份后读取消息和附件，并将角色、模型、记忆和各窗口摘要作为密文同步；云端保存后，由当前节点另行确认应用。恢复文件和模型 Key 留在自己的设备。
 
-使用 `crypto-init <directory> <AI id>` 建立身份，`crypto-status` 查看状态；`crypto-trust` 需独立核对账号 master、设备 Ed25519 和 Curve25519 指纹。`crypto-export-recovery` 保存私有恢复文件，换节点用 `crypto-recover` 恢复；仅登录或重新配对不能获得历史解密能力。向新管理员分享历史前，先确认当前管理员身份与设备信任，再用 `crypto-authorize-admin` 明确授权。恢复文件不提交、分享或交给服务管理员。参数与传输契约见[加密契约](https://github.com/NingCold/llm-nest-server/blob/main/docs/design/crypto-contract.md)，联调状态见[当前安排](https://github.com/NingCold/llm-nest/blob/main/docs/project/current.md)。
+使用 `crypto-init <directory> <AI id>` 建立身份；中断后重试会继续使用同一身份与已有历史密钥备份，不会重置它们。`crypto-status <directory> <AI id> [<对方账号 ID> <对方设备 ID>]` 查看已有状态，可同时检查指定设备是否受信任，不会创建身份。`crypto-trust` 需独立核对账号 master、设备 Ed25519 和 Curve25519 指纹。`crypto-export-recovery` 保存私有恢复文件，换节点用 `crypto-recover` 恢复；仅登录或重新配对不能获得历史解密能力，当前不提供身份重置。向新管理员分享历史前，先确认当前管理员身份与设备信任，再用 `crypto-authorize-admin` 明确授权。恢复文件不提交、分享或交给服务管理员。参数与传输契约见[加密契约](https://github.com/NingCold/llm-nest-server/blob/main/docs/design/crypto-contract.md)，联调状态见[当前安排](https://github.com/NingCold/llm-nest/blob/main/docs/project/current.md)。
 
-桌面绑定新 AI 后，还需准备该 AI 自己的加密身份。当前这部分使用安装版自带的 `agent/llmn-agent.exe`，尚无桌面设置入口：
+当前客户端源码 `0.1.1-alpha.15` 配合 Agent 源码 `0.1.1-alpha.14`，可在 **我的账号 → 我管理的 AI → 在这台电脑上运行** 配对后进入 **完成加密 AI 设置**：准备首次身份或从恢复文件恢复，保存 AI 恢复文件，确认双方信任，保存角色与模型，然后启动 Agent。该入口及上面的预算改进尚未发布；公开安装版仍为 `0.1.1-alpha.13`。
+
+`crypto-status` 的 `identityReady` 表示身份及历史密钥备份已准备，`recoverySaved` 表示已记录恢复文件保存或恢复准备；传入对方账号与设备后，`peerTrusted` 表示该设备是否通过本机信任检查。查看状态不会代为初始化或信任设备。
+
+使用公开安装版或独立命令行节点时，可通过自带的 `agent/llmn-agent.exe` 准备加密身份：
 
 1. 等待配对完成，在桌面停止本机 Agent。以下所有 `crypto-*` 命令都需要独占节点目录，包括 `crypto-status`；运行或配对期间不能执行。
 2. 对该桌面节点执行 `crypto-init`，保存输出的 AI 设备 ID、Ed25519、Curve25519 和账号主指纹（`master.keys` 中的公钥值）。再用 `crypto-export-recovery` 将恢复文件保存到节点目录之外、仅当前用户可访问的私有目录；Windows 文件继承目标目录权限，先准备好受限目录。
@@ -84,6 +88,7 @@ cargo run -p agent-node -- profile C:\private\llmn-agent <AI-ID> C:\private\prof
 $agentExe = "C:\path\to\LLM-Nest\agent\llmn-agent.exe"
 $nodeDirectory = "C:\path\to\desktop-node"
 & $agentExe crypto-init $nodeDirectory "<AI-ID>"
+& $agentExe crypto-status $nodeDirectory "<AI-ID>" "<真人账号ID>" "<真人设备ID>"
 & $agentExe crypto-export-recovery $nodeDirectory "<AI-ID>" "C:\private\llmn-recovery\ai-recovery.json"
 & $agentExe crypto-trust $nodeDirectory "<AI-ID>" "<真人账号ID>" "<真人设备ID>" "<真人Ed25519>" "<真人Curve25519>" "<真人账号主指纹>"
 ```

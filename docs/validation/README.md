@@ -1,27 +1,6 @@
 # Agent 验证
 
-## 当前源码验证
-
-2026-11-01，Agent 源码版本为 `0.1.1-alpha.14`，尚未发布；公开 Release 仍为 `0.1.1-alpha.13`。客户端 `0.1.1-alpha.15` 已在本机通过 NSIS 安装，随包 Agent `0.1.1-alpha.14` 的版本及 SHA-256 已核对；生产服务和 Web 未更新。协议仍为 v4 / sealedV1。
-
-本轮预算预留改为最终组装输入的保守估算加配置输出上限（包含必要推理预算），云端、同机、自动接话及摘要共用规则。百万上下文回归核对预留不会随完整窗口膨胀，输出上限变化会相应改变预留；保留持久计数、开始后结果未知不重调、不返还额度及明确未开始队列冲突的事务释放规则。本地额度不代表供应商实际 Token 用量或账单。
-
-加密状态查询不创建身份；`identityReady` 表示本机身份、交叉签名私钥和历史密钥备份已准备，`recoverySaved` 表示已记录恢复文件保存或恢复准备，指定对方账号与设备时 `peerTrusted` 检查该设备的信任状态。`crypto-init` 重试继续已有身份和备份，不轮换它们；`crypto-status` 可选参数为成对的对方账号 ID、设备 ID，当前不提供身份重置。
-
-本轮 Windows stable MSVC 本机缓存检查通过：fmt、workspace test（209 个测试）、workspace all-targets clippy、依赖边界检查、清理脚本的 7 个隔离测试。Clippy 保留既有警告。测试使用临时节点与模拟 provider，不读取日常数据。
-
-服务端组织的新 Agent 隔离 SDK 组合验收通过：完整加密路径使用模拟模型 21 次、真实模型 0 次；历史转换与资料迁移验收也通过，模型调用 0 次。覆盖加密消息及附件、资料同步、摘要、恢复与迁移，并核对初始化重试保留身份与备份、未初始化状态查询不创建身份及状态字段。这些隔离 SDK 结果与下方桌面安装验证分别记录，不代表生产部署或真实模型调用。
-
-
-Windows 安装升级前后，83 个日常持久文件的 SHA-256 保持一致。独立桌面测试账号已通过实际界面完成创建 AI、配置与绑定、首次身份准备、恢复文件导出取消及成功导出、双方设备信任、停机时加密保存角色与模型、启动后节点应用、重新打开客户端、开启窗口加密与模拟模型回复。节点额度保存为每日最多 17 次、每日 Token 额度 123456，修改端点地址后仍保留。这是独立账号与模拟模型的界面验收，没有测试日常“小巢”的新模型，真实模型调用为 0。
-
-本轮未推送、创建 tag 或部署服务端，公开下载仍为 alpha.13。Linux 实机、实际 AI 恢复文件导入界面和独立安全审查尚未完成；已验证首次身份准备与恢复文件导出，不把它们视为恢复导入界面通过。
-
-## 当前公开版本
-
-2026-10-29，[0.1.1-alpha.13](https://github.com/NingCold/llm-nest-agent/releases/tag/v0.1.1-alpha.13) 已公开，tag 源码为 `a78f729b`；随后 main 的 `fc9a587` 仅修复 CI Windows 工具解压路径。Windows/Linux Checks 均通过，[Artifacts 运行 40889208608](https://github.com/NingCold/llm-nest-agent/actions/runs/40889208608) 成功。已核对全部 8 个发布资产：两个平台程序及各自声明、manifest、SHA256SUMS、LICENSE、NOTICE；程序及声明的 SHA-256 与清单一致，LICENSE/NOTICE 与 tag 内原文字节一致，本机 Windows 程序的 `--version` 实际返回 `llmn-agent 0.1.1-alpha.13`。
-
-Linux 构建基线为 Ubuntu 24.04。客户端 `alpha.13` 的 deb/AppImage 已校验内嵌 Agent 原始字节，本机 Windows 已安装同版客户端并核对 Agent 的版本与摘要。实际界面已连接云端，但本次未登录、解锁或重新运行日常节点。该版本仍为 Alpha；Linux 人工操作、真实客户端重启后的历史验读与独立安全审查继续保留。
+在仓库根目录运行以下检查，使用临时节点与模拟 provider；真实模型调用需另行授权。
 
 ## 本仓检查
 
@@ -30,21 +9,25 @@ Linux 构建基线为 Ubuntu 24.04。客户端 `alpha.13` 的 deb/AppImage 已�
 ```sh
 cargo fmt --all -- --check
 python scripts/check-boundaries.py
+python scripts/test_package_agent.py
+python scripts/test_merge_agent_artifacts.py
+cargo build --workspace --locked
 cargo test --workspace --locked
 cargo clippy --workspace --all-targets --locked
 python scripts/test_clean_build_artifacts.py
 ```
 
-测试使用临时节点和模拟 provider，不读取日常数据或调用付费 API。重点覆盖模型协议及图片转换、必要上下文、预算、开始确认与 uncertain 恢复、密文资源、来源失效、同机与托管进程生命周期。构建及模拟测试通过不表示真实模型、桌面安装、Linux 实机、真实客户端重启验读或独立安全审查已完成。
+测试使用临时节点和模拟 provider，不读取日常数据或调用付费 API。重点覆盖模型协议及图片转换、必要上下文、预算、开始确认与 uncertain 恢复、密文资源、来源失效、同机与托管进程生命周期。各次实测的环境、输入与结果见[验证记录](records.md)。
 
 发布程序另用 `scripts/package-agent.py` 核对 --version，并由 `scripts/merge-agent-artifacts.py` 合并同版两平台的 manifest、验证实际程序 SHA-256、生成 SHA256SUMS.txt。release workflow 的普通手动运行不填 release_tag 时只生成14天临时 Actions 验收产物，没有正式下载 URL，也不会创建 Release。
 
 推送版本 tag 或手动输入已有 `release_tag` 时，流程 checkout 该 tag，核对 HEAD、tag 与本仓版本，再生成同时覆盖 Windows/Linux 的 agent-manifest.json。其 HTTPS 下载地址固定到该版本 tag，不使用 latest；仅最后的可选 job 获得 contents:write，并创建或更新草稿 Release，不创建 tag，不覆盖已公开 Release。维护者核对验收和许可证后手动公开，正式 URL 才可下载；客户端发布应引用公开后可长期下载的双平台清单，不能引用14天 Actions artifact。
 
-客户端/服务端组合联调由服务端仓组织，读取明确提交和产物摘要，独立账号与模拟模型；当前本地拆仓结果由主仓进度说明记录。
+客户端/服务端组合联调由服务端仓组织，读取明确提交和产物摘要，独立账号与模拟模型；具体结果保存在[验证记录](records.md)。
 
-2026-10-29 本地拆仓组合验收发现 Windows MSVC 默认 1 MiB 主线程栈不足以容纳 debug 构建的 Matrix SDK Olm 接收深链。`llmn-agent` 现仅在 Windows MSVC 显式保留 2 MiB 主线程栈，PE 验读为 reserve=2097152、commit=4096；不改变协议、任务顺序或持久恢复规则。平台参数见 [Microsoft /STACK](https://learn.microsoft.com/en-us/cpp/build/reference/stack-stack-allocations?view=msvc-170)。已有 SDK 身份的托管重启回归使用成功的密钥查询、上传及 sync 响应，确认处理后进入资料读取并正常停止。
 
-同日服务端组织的 full 与 migration 两种隔离组合验收均通过：覆盖真实 Agent 加密消息/附件/引用、离线 Olm 和补传、资料应用与遗忘、摘要、交接及新节点恢复，以及历史转换与节点资料迁移；使用模拟模型和独立测试资料。Linux 实机、真实客户端重启验读与独立安全审查的原有缺口继续保留。
+第三方许可材料由 cargo-about 0.9.3 按 Windows/Linux 目标的锁定依赖生成，发布包要求同时提供程序、第三方声明、LICENSE 与 NOTICE。`test_package_agent.py` / `test_merge_agent_artifacts.py` 校验声明原文、摘要、固定地址及篡改拒绝。
 
-第三方许可材料由 cargo-about 0.9.3 按 Windows/Linux 目标的锁定依赖生成，发布包要求同时提供程序、第三方声明、LICENSE 与 NOTICE。`test_package_agent.py` / `test_merge_agent_artifacts.py` 校验声明原文、摘要、固定地址及篡改拒绝。生成过程不编译代码或调用模型；声明生成通过不等于全部平台系统库或法律审查已完成。
+## 验收记录与待验证范围
+
+[历史验证记录](records.md)保存具体版本、日期、环境与实测结果。记录中尚未完成的范围包括 Linux 实机、AI 恢复文件导入界面与独立安全审查；后续交付还需验证受邀人能自行开始聊天，以及客户端、服务端与 Agent 固定版本的统一交付。产品试用安排由[客户端仓](https://github.com/NingCold/llm-nest/blob/main/docs/project/current.md)维护。

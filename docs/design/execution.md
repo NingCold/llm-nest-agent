@@ -4,9 +4,9 @@
 
 ## 当前云端私聊与群聊执行
 
-聊天提供显式启用 `sealedV1` 的执行路径：节点使用官方 Matrix SDK 解密材料，核验设备与账号 master 双签后复用原上下文与任务确认；流式、结果与中断片段只上传密文封装。资料须由当前绑定节点确认应用，换节点提供 drain/ready 握手；恢复不会自动重跑结果不明的调用。同机使用同一封装，Olm 密钥投递已通过真实 Windows IPC 验证，联调见[当前安排](https://github.com/NingCold/llm-nest/blob/main/docs/project/current.md)。群、附件与约定仍保留原权限和调度规则，内容由节点解密；完整协议见[加密契约](https://github.com/NingCold/llm-nest-server/blob/main/docs/design/crypto-contract.md)。
+聊天提供显式启用 `sealedV1` 的执行路径：节点使用官方 Matrix SDK 解密材料，核验设备与账号 master 双签后复用原上下文与任务确认；流式、结果与中断片段只上传密文封装。资料须由当前绑定节点确认应用，换节点提供 drain/ready 握手；恢复不会自动重跑结果不明的调用。同机使用同一封装；联调环境与结果见[验证记录](../validation/records.md)。群、附件与约定仍保留原权限和调度规则，内容由节点解密；完整协议见[加密契约](https://github.com/NingCold/llm-nest-server/blob/main/docs/design/crypto-contract.md)。
 
-服务端与独立 `node` 提供云端 AI 私聊、群聊、有限自动接话和一次性约定；字段见[节点接口](https://github.com/NingCold/llm-nest-server/blob/main/docs/design/api.md#云端-ai-与节点接口)，实际联调证据另由[验证记录](../validation/README.md)维护。协议为 v4，旧版本节点明确拒绝。云端不加载模型客户端，`llmn-agent` 复用 `ai-client` 与 `builtin-agent` 纯上下文核心，不依赖旧 Runtime/SocialStore。
+服务端与独立 `node` 提供云端 AI 私聊、群聊、有限自动接话和一次性约定；字段见[节点接口](https://github.com/NingCold/llm-nest-server/blob/main/docs/design/api.md#云端-ai-与节点接口)，实际联调证据另由[验证记录](../validation/records.md)维护。协议为 v4，旧版本节点明确拒绝。云端不加载模型客户端，`llmn-agent` 复用 `ai-client` 与 `builtin-agent` 纯上下文核心，不依赖旧 Runtime/SocialStore。
 
 云端先保存真人消息，再按结构化 mentions 顺序选出当前有效 AI，追加被回复 AI 并去重，为每个目标建立五分钟有效任务；群内普通文字名字不构成提及。默认没有明确目标不触发模型；开启有限自动接话后，普通真人输入和成功的 AI 回复可按额度继续轮转。私聊沿用对方 AI 触发，普通连续输入默认合并等待 800ms。一个触发消息以 aiResponses 数组记录各 AI 的任务状态，目标失败不把错误伪装成回答，也不覆盖其他 AI 任务。
 
@@ -16,7 +16,7 @@
 
 一次性约定以独立 contact 触发携带创建者、内容和到期时间，读取本窗口当前历史和该 AI 的记忆/摘要，不创建假消息，也不带入普通追问的隐式群引用。延期 contact 等待免打扰结束时，后续就绪任务可以先行；消息合并等待仍保持原有队列顺序。合并的所有 inputIds 都是必要材料，各条原文共同显示该次回复状态。
 
-准备失败在调用前 reject，不生成虚构回答。节点严格解析模型与参数，以同一快照准备材料；按 UTC 日持久预留调用数及完整输入/输出容量，时钟回拨不重开旧日预算。开始前先把原 start 命令和预算写入本地 SQLite，命令携带 taskRevision、conversationRevision、完整 sources、derivedSources、materialScopes 和 configurationRevision；收到并保存云端持久确认后才调用模型。单次调用最长 120 秒，不自动重试模型。
+准备失败在调用前 reject，不生成虚构回答。节点严格解析模型与参数，以同一快照准备材料；按 UTC 日持久预留调用数及最终组装输入的保守估算加输出上限（包含必要推理预算），时钟回拨不重开旧日预算。开始前先把原 start 命令和预算写入本地 SQLite，命令携带 taskRevision、conversationRevision、完整 sources、derivedSources、materialScopes 和 configurationRevision；收到并保存云端持久确认后才调用模型。单次调用最长 120 秒，不自动重试模型。
 
 仅当本次开始响应明确为 HTTP 409 `task_not_ready` 或 `conversation_busy` 时，服务器保证未开始；同一进程可在本地事务移除尚无回执的 intent 并撤销这一笔调用/token 预留，等轮到后重新读取准备材料。普通 409、网络失败和开始确认丢失均不能推定未开始；已开始调用的失败/取消不返还预算。该例外不使时钟回拨重开旧日额度，也不允许重启后猜测模型未执行。
 

@@ -5,3 +5,11 @@
 宿主通过 `ContextInput` 提供材料，调用 `ConsciousnessService::prepare` 得到模型消息及来源快照；`generation` 计算模型生成参数，`summary` 构造摘要请求。库只依赖中立社交类型、公共模型消息和模型客户端，不读取数据库、配置、密钥或网络连接。
 
 节点负责权限检查、持久队列、版本复核、执行和流式保存；此库不实现 WSS 或存储。
+
+在仓库根目录运行本地测试：
+
+```sh
+cargo test -p builtin-agent --locked
+```
+
+[开发入口](../../docs/development.md) · [验证范围](../../docs/validation/README.md)

@@ -10,6 +10,14 @@ python scripts/check-boundaries.py
 
 五个工作区包位于 `node/` 与 `crates/`。social/connector 从服务端固定 Git revision 读取，锁文件维护已验证依赖版本，不使用其他仓库的源码路径。三仓均已公开，依赖从正式 GitHub 地址读取；当前 social/connector 固定在同一提交 [`f47f9b4a99ba8602b7992b53d22bacf08534a64c`](https://github.com/NingCold/llm-nest-server/commit/f47f9b4a99ba8602b7992b53d22bacf08534a64c)。
 
+## 模块入口
+
+- [node](../node/README.md)：CLI、SQLite、配对、执行、加密同步和同机通信。
+- [ai-client](../crates/ai-client/README.md)：模型目录、参数校验与供应商协议。
+- [core](../crates/core/README.md)：纯上下文、预算与摘要提示。
+- [crypto](../crates/crypto/README.md)：官方 Matrix SDK 身份与加密封装。
+- [common](../crates/common/README.md)：模型消息、用量和耗时类型。
+
 运行配置用独立临时节点，见[配置](configuration.md)。catalog 与 --version 不读配置、凭据、不联网或创建数据；check 严格校验候选配置。
 
 本地额度按本次最终组装输入的保守估算（UTF-8 字节、消息开销和图片估算）加配置输出上限预留，输出上限包含必要推理预算；不按模型完整上下文容量扣除。云端、同机、自动接话与摘要使用同一估算规则，摘要分段也按该规则检查可行性。这是本地准入额度，不是供应商真实 Token 用量或账单；持久计数和开始后结果未知时不自动重试、不返还预留的规则保持不变。

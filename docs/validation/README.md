@@ -28,4 +28,4 @@ python scripts/test_clean_build_artifacts.py
 
 ## 验收记录与待验证范围
 
-[验证记录](records.md)保存具体版本、日期、环境、输入与结果。客户端/服务端组合联调由服务端仓组织，使用固定提交和产物、独立账号与模拟模型。记录中尚未完成的范围包括 Linux 实机、AI 恢复文件导入界面与独立安全审查；后续交付还需验证受邀人能自行开始聊天，以及客户端、服务端与 Agent 固定版本的统一交付。产品试用安排由[客户端仓](https://github.com/NingCold/llm-nest/blob/main/docs/project/current.md)维护。
+[验证记录](records.md)按版本记录运行环境和结果。[Agent 0.1.2](https://github.com/NingCold/llm-nest-agent/releases/tag/v0.1.2) 提供通过双平台检查的 Windows、Linux 程序及其固定清单；加密聊天、换节点和恢复验读已在隔离数据库与模拟模型上通过。日常试用仍需验证 Linux 实机、从桌面导入 AI 恢复文件及受邀者独立使用，见[产品安排](https://github.com/NingCold/llm-nest/blob/main/docs/project/current.md)。

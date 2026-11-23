@@ -123,11 +123,11 @@ cargo run -p agent-node -- profile C:\private\llmn-agent <AI-ID> C:\private\prof
 
 私聊和群聊可开启加密。节点验证发送者身份后读取消息和附件，并将角色、模型、记忆和各窗口摘要作为密文同步；云端保存后，由当前节点另行确认应用。恢复文件和模型 Key 留在自己的设备。
 
-使用 `crypto-init <directory> <AI id>` 首次建立身份；已有云端身份时使用 `crypto-recover` 恢复。当前源码中，初始化中断后重试会继续使用同一身份与已有历史密钥备份；`crypto-status <directory> <AI id> [<对方账号 ID> <对方设备 ID>]` 查看已有状态，可同时检查指定设备是否受信任，不会创建身份。公开 alpha.13 的 `crypto-init` 遇到已有云端身份会拒绝，`crypto-status` 只支持节点目录和 AI ID，输出 `ready` 与设备指纹，并可能初始化本机 SDK 会话；它不提供源码版的身份准备、恢复保存及指定设备信任状态字段。两版均支持 `crypto-export-recovery`、`crypto-recover` 和 `crypto-trust`，参数顺序相同。`crypto-trust` 需独立核对账号 master、设备 Ed25519 和 Curve25519 指纹。`crypto-export-recovery` 保存私有恢复文件，换节点用 `crypto-recover` 恢复；仅登录或重新配对不能获得历史解密能力，当前不提供身份重置。向新管理员分享历史前，先确认当前管理员身份与设备信任，再用 `crypto-authorize-admin` 明确授权。恢复文件不提交、分享或交给服务管理员。参数与传输契约见[加密契约](https://github.com/NingCold/llm-nest-server/blob/main/docs/design/crypto-contract.md)，联调状态见[当前安排](https://github.com/NingCold/llm-nest/blob/main/docs/project/current.md)。
+使用 `crypto-init <directory> <AI id>` 首次建立身份；已有云端身份时使用 `crypto-recover` 恢复。0.1.2 中，初始化中断后重试会继续使用同一身份与已有历史密钥备份；`crypto-status <directory> <AI id> [<对方账号 ID> <对方设备 ID>]` 查看已有状态，可同时检查指定设备是否受信任，不会创建身份。公开 alpha.13 的 `crypto-init` 遇到已有云端身份会拒绝，`crypto-status` 只支持节点目录和 AI ID，输出 `ready` 与设备指纹，并可能初始化本机 SDK 会话；它不提供 0.1.2 的身份准备、恢复保存及指定设备信任状态字段。两版均支持 `crypto-export-recovery`、`crypto-recover` 和 `crypto-trust`，参数顺序相同。`crypto-trust` 需独立核对账号 master、设备 Ed25519 和 Curve25519 指纹。`crypto-export-recovery` 保存私有恢复文件，换节点用 `crypto-recover` 恢复；仅登录或重新配对不能获得历史解密能力，当前不提供身份重置。向新管理员分享历史前，先确认当前管理员身份与设备信任，再用 `crypto-authorize-admin` 明确授权。恢复文件不提交、分享或交给服务管理员。参数与传输契约见[加密契约](https://github.com/NingCold/llm-nest-server/blob/main/docs/design/crypto-contract.md)，联调状态见[当前安排](https://github.com/NingCold/llm-nest/blob/main/docs/project/current.md)。
 
-客户端 `0.1.1-alpha.15` 与 Agent `0.1.1-alpha.14` 已验收的设置流程：在 **我的账号 → 我管理的 AI → 在这台电脑上运行** 配对后进入 **完成加密 AI 设置**：准备首次身份或从恢复文件恢复，保存 AI 恢复文件，确认双方信任，保存角色与模型，然后启动 Agent。该入口及预算改进的验收记录见[2026-11-01 记录](validation/records.md#2026-11-01-源码与桌面验收)；公开安装版仍为 `0.1.1-alpha.13`。
+也可在[桌面 0.1.2](https://github.com/NingCold/llm-nest/releases/tag/v0.1.2)的 **我的账号 → 我管理的 AI → 在这台电脑上运行** 配对，按引导准备或恢复身份、保存 AI 恢复文件、核对双方信任、保存角色与模型，再启动节点。
 
-当前源码 `crypto-status` 的 `identityReady` 表示身份及历史密钥备份已准备，`recoverySaved` 表示已记录恢复文件保存或恢复准备；传入对方账号与设备后，`peerTrusted` 表示该设备是否通过本机信任检查。查看状态不会代为初始化或信任设备。
+`crypto-status` 输出中的 `identityReady` 表示身份及历史密钥备份已准备，`recoverySaved` 表示已记录恢复文件保存或恢复准备；传入对方账号与设备后，`peerTrusted` 表示该设备是否通过本机信任检查。查看状态不会代为初始化或信任设备。
 
 公开安装版可使用随包 `agent/llmn-agent.exe`，独立节点使用下载或构建的程序，按以下步骤准备加密身份。内网试用站要求新内容加密，配对完成后须先完成这些准备：
 

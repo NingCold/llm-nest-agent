@@ -5,7 +5,6 @@
 //! headers and the per-route timeout apply as elsewhere.
 
 use std::collections::HashMap;
-use std::time::Duration;
 
 use async_trait::async_trait;
 use futures_util::StreamExt;
@@ -45,16 +44,7 @@ impl GeminiProvider {
         headers: &HashMap<String, String>,
         timeout_ms: Option<u64>,
     ) -> Result<Self> {
-        if timeout_ms == Some(0) {
-            return Err(AiError::ConfigError(
-                "timeout_ms must be a positive number of milliseconds".into(),
-            ));
-        }
-        let mut builder = reqwest::Client::builder();
-        if let Some(ms) = timeout_ms {
-            builder = builder.timeout(Duration::from_millis(ms));
-        }
-        let client = builder.build()?;
+        let client = crate::protocols::http::model_client(base_url, timeout_ms)?;
 
         let mut header_map = HeaderMap::new();
         for (name, value) in headers {

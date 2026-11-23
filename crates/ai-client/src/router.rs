@@ -112,6 +112,7 @@ impl ModelRouter {
             let provider = pid.0.clone();
             let protocol = effective_protocol(&provider, pcfg)?;
             let base_url = effective_base_url(&provider, pcfg)?;
+            crate::protocols::http::model_endpoint(&base_url)?;
             let mut models = BTreeMap::new();
             for (mid, mcfg) in &pcfg.models {
                 let spec = Self::build_spec(&provider, mid.0.clone(), mcfg, protocol)?;
@@ -398,6 +399,20 @@ mod tests {
     }
 
     #[test]
+    fn remote_http_is_rejected_before_catalog_installation() {
+        let configs = HashMap::from([(
+            ProviderId::new("deepseek"),
+            config("http://model.example", vec![]),
+        )]);
+        assert!(
+            ModelRouter::new(&configs)
+                .unwrap_err()
+                .to_string()
+                .contains("HTTPS")
+        );
+    }
+
+    #[test]
     fn merges_builtin_capabilities() {
         let mut configs = HashMap::new();
         configs.insert(
@@ -463,7 +478,7 @@ mod tests {
             ProviderConfig {
                 default_model: Some("reasoner".into()),
                 ..config(
-                    "url",
+                    "https://model.example",
                     vec![
                         ("chat".into(), model("deepseek-chat")),
                         ("reasoner".into(), model("deepseek-reasoner")),
@@ -481,7 +496,7 @@ mod tests {
         configs.insert(
             ProviderId::new("deepseek"),
             config(
-                "url",
+                "https://model.example",
                 vec![
                     ("a".into(), model("deepseek-chat")),
                     ("b".into(), model("deepseek-reasoner")),
@@ -495,7 +510,10 @@ mod tests {
         let mut configs = HashMap::new();
         configs.insert(
             ProviderId::new("custom-gateway"),
-            config("url", vec![("z".into(), model("zz-model"))]),
+            config(
+                "https://model.example",
+                vec![("z".into(), model("zz-model"))],
+            ),
         );
         let r = router(&configs);
         assert_eq!(r.default_selection().unwrap().model, "zz-model");
@@ -506,7 +524,10 @@ mod tests {
         let mut configs = HashMap::new();
         configs.insert(
             ProviderId::new("openai"),
-            config("url", vec![("alias".into(), model("gpt-4o"))]),
+            config(
+                "https://model.example",
+                vec![("alias".into(), model("gpt-4o"))],
+            ),
         );
         let r = router(&configs);
         let by_wire = r
@@ -532,7 +553,7 @@ mod tests {
         let mut configs = HashMap::new();
         configs.insert(
             ProviderId::new("openai"),
-            config("url", vec![("a".into(), model("gpt-4o"))]),
+            config("https://model.example", vec![("a".into(), model("gpt-4o"))]),
         );
         let r = router(&configs);
         let err = r
@@ -556,7 +577,7 @@ mod tests {
         let mut configs = HashMap::new();
         configs.insert(
             ProviderId::new("openai"),
-            config("url", vec![("a".into(), model("gpt-4o"))]),
+            config("https://model.example", vec![("a".into(), model("gpt-4o"))]),
         );
         let r = router(&configs);
         // gpt-5 is appended by the builtin directory now; use a truly unknown id
@@ -583,7 +604,7 @@ mod tests {
         configs.insert(
             ProviderId::new("openai"),
             config(
-                "url",
+                "https://model.example",
                 vec![
                     (
                         "reasoning".into(),
@@ -659,7 +680,10 @@ mod tests {
         let mut configs = HashMap::new();
         configs.insert(
             ProviderId::new("openai"),
-            config("url", vec![("a".into(), reasoning_model("gpt-5", vec![]))]),
+            config(
+                "https://model.example",
+                vec![("a".into(), reasoning_model("gpt-5", vec![]))],
+            ),
         );
         let err = ModelRouter::new(&configs).unwrap_err();
         assert!(matches!(err, AiError::ConfigError(_)));
@@ -673,7 +697,7 @@ mod tests {
             ProviderId::new("openai"),
             ProviderConfig {
                 default_model: Some("ghost".into()),
-                ..config("url", vec![("a".into(), model("gpt-4o"))])
+                ..config("https://model.example", vec![("a".into(), model("gpt-4o"))])
             },
         );
         let err = ModelRouter::new(&configs).unwrap_err();

@@ -8,7 +8,7 @@
 
 独立节点的初始化、配对与运行见[起步步骤](node-cli.md#首次运行)。
 
-`node.toml` 的 `providers` 使用 [ai-client](../crates/ai-client/README.md) 的配置格式。Key 仅接受环境变量引用，初始化模板使用 `API_KEY_CHATECNU`；不要把真实 Key 写进示例或提交到仓库。HTTPS 与 WSS 验证证书，私有 CA 使用 `ca_file`，仅本机开发允许 HTTP。
+`node.toml` 的 `providers` 使用 [ai-client](../crates/ai-client/README.md) 的配置格式。Key 仅接受环境变量引用，初始化模板使用 `API_KEY_CHATECNU`；不要把真实 Key 写进示例或提交到仓库。HTTPS 与 WSS 验证证书，私有 CA 使用 `ca_file`，模型端点必须使用 HTTPS，仅回环地址可用 HTTP。模型请求只跟随同源跳转（协议、主机、端口均相同）。
 
 每个 AI 的模型、思考强度、温度和输出上限属于其档案。温度留空使用模型服务默认值，输出上限留空使用意识系统预算。非法模型和参数明确报错，不自动替换模型。已开始的任务保持冻结设置，新配置用于后续任务。节点总预算及每窗口自动额度见[节点说明](node-cli.md)。
 

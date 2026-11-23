@@ -98,14 +98,38 @@ async fn relay(api: &NodeClient, store: &Store, s: &Session, request: Request) -
         |r| r.get(0),
     )?;
     let request: Request = serde_json::from_str(&frozen)?;
-    let response = api
+    let admin_history = request.body["llmn_purpose"] == "aiAdminHistory";
+    if admin_history && request.body.get("llmn_chat_revisions").is_none() {
+        // A pre-upgrade Olm payload cannot be narrowed after encryption.
+        store.db.execute(
+            "DELETE FROM crypto_outbox WHERE ai=?1 AND id=?2",
+            params![s.ai, request.request_id],
+        )?;
+        return Ok(());
+    }
+    let response = match api
         .crypto_request(&CryptoRequest {
             device_id: request.device_id.clone(),
             request_id: request.request_id.clone(),
             kind: request.kind.clone(),
             body: request.body.clone(),
         })
-        .await?;
+        .await
+    {
+        Err(
+            error @ NodeError::Api {
+                status: 403 | 409, ..
+            },
+        ) if admin_history => {
+            // A fresh scope and request ID are required after a grant changes.
+            store.db.execute(
+                "DELETE FROM crypto_outbox WHERE ai=?1 AND id=?2",
+                params![s.ai, request.request_id],
+            )?;
+            return Err(error.into());
+        }
+        response => response?,
+    };
     s.device.acknowledge(&request, response).await?;
     store.db.execute(
         "DELETE FROM crypto_outbox WHERE ai=?1 AND id=?2",
@@ -234,12 +258,12 @@ async fn sync_inner(
     let conversations = api.crypto_conversations().await?;
     let mut windows = Vec::with_capacity(conversations.len());
     receive_group_history(store, &s, &conversations).await?;
-    for conversation in conversations {
+    for conversation in &conversations {
         if conversation.kind == "group" {
-            share_group_history(api, store, &s, &conversation).await?;
+            share_group_history(api, store, &s, conversation).await?;
         }
-        register_window(store, &conversation, &binding.ai)?;
-        windows.push(conversation.id);
+        register_window(store, conversation, &binding.ai)?;
+        windows.push(conversation.id.clone());
     }
     for cid in &windows {
         apply_resources(api, store, Some(config), &s, Some(cid)).await?;
@@ -361,7 +385,7 @@ async fn sync_inner(
         )
         .await?;
     }
-    share_admin_history(api, store, &s).await?;
+    share_admin_history(api, store, &s, &conversations, None).await?;
     if draining(store, &binding.ai)? {
         let local: bool = store.db.query_row(
             "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE name='direct_turns')",
@@ -2259,9 +2283,49 @@ pub async fn authorize_admin(
         "INSERT INTO crypto_admins(ai,account,device) VALUES(?1,?2,?3) ON CONFLICT DO NOTHING",
         params![ai, account, device],
     )?;
-    share_admin_history(api, store, &s).await
+    share_admin_history(
+        api,
+        store,
+        &s,
+        &api.crypto_conversations().await?,
+        Some((account, device)),
+    )
+    .await
 }
-async fn share_admin_history(api: &NodeClient, store: &Store, s: &Session) -> Result<()> {
+async fn admin_chat_history(
+    device: &Device,
+    ai: &str,
+    conversations: &[NodeConversation],
+    audience_revision: &str,
+) -> Result<serde_json::Value> {
+    let mut rooms = std::collections::BTreeMap::new();
+    for c in conversations {
+        if c.encryption.is_some() && c.members.iter().any(|m| m.id == ai) {
+            let cid = uuid::Uuid::parse_str(&c.id)?.to_string();
+            rooms.insert(room_id(&cid), (cid, c.revision.clone()));
+        }
+    }
+    let mut keys = device
+        .machine()
+        .store()
+        .export_room_keys(|key| rooms.contains_key(key.room_id().as_str()))
+        .await?;
+    keys.sort_by(|a, b| (&a.room_id, &a.session_id).cmp(&(&b.room_id, &b.session_id)));
+    let revisions: std::collections::BTreeMap<_, _> = keys
+        .iter()
+        .map(|key| rooms[key.room_id.as_str()].clone())
+        .collect();
+    Ok(
+        json!({"aiId":ai,"senderDevice":device.machine().device_id(),"chatRevisions":revisions,"audienceRevision":audience_revision,"keys":keys}),
+    )
+}
+async fn share_admin_history(
+    api: &NodeClient,
+    store: &Store,
+    s: &Session,
+    conversations: &[NodeConversation],
+    requested: Option<(&str, &str)>,
+) -> Result<()> {
     use sha2::{Digest, Sha256};
     let admins: Vec<(String, String, Option<String>)> = store
         .db
@@ -2339,23 +2403,21 @@ async fn share_admin_history(api: &NodeClient, store: &Store, s: &Session) -> Re
     if admins.is_empty() {
         return Ok(());
     }
-    let keys = s
-        .device
-        .machine()
-        .store()
-        .export_room_keys(|_| true)
-        .await?;
-    let body = json!({"aiId":s.ai,"senderDevice":s.device.machine().device_id(),"keys":keys});
+    let body = admin_chat_history(&s.device, &s.ai, conversations, &audience.revision).await?;
     let fingerprint = format!("{:x}", Sha256::digest(serde_json::to_vec(&body)?));
-    for (account, device, sent) in admins {
+    'admin: for (account, device, sent) in admins {
+        let explicit = requested == Some((account.as_str(), device.as_str()));
         if !current.contains(&account) {
             store.db.execute(
                 "DELETE FROM crypto_admins WHERE ai=?1 AND account=?2",
                 params![s.ai, account],
             )?;
+            ensure!(!explicit, "administrator grant changed");
             continue;
         }
-        if sent.as_ref() == Some(&fingerprint) {
+        if body["chatRevisions"].as_object().unwrap().is_empty()
+            || sent.as_ref() == Some(&fingerprint)
+        {
             continue;
         }
         let user = llmn_crypto::ruma::UserId::parse(user_id(&account))?;
@@ -2363,12 +2425,12 @@ async fn share_admin_history(api: &NodeClient, store: &Store, s: &Session) -> Re
             .device
             .machine()
             .get_device(&user, device.as_str().into(), None)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("administrator device disappeared"))?;
-        ensure!(
-            target.is_verified() && target.is_cross_signed_by_owner(),
-            "administrator trust changed"
-        );
+            .await?;
+        let Some(target) = target.filter(|d| d.is_verified() && d.is_cross_signed_by_owner())
+        else {
+            ensure!(!explicit, "administrator device trust changed");
+            continue;
+        };
         if let Some((id, r)) = s
             .device
             .machine()
@@ -2403,7 +2465,7 @@ async fn share_admin_history(api: &NodeClient, store: &Store, s: &Session) -> Re
             "administrator history key sharing withheld"
         );
         for request in requests {
-            relay(
+            let result = relay(
                 api,
                 store,
                 s,
@@ -2414,11 +2476,28 @@ async fn share_admin_history(api: &NodeClient, store: &Store, s: &Session) -> Re
                     body: {
                         let mut value = serde_json::to_value(request)?;
                         value["llmn_purpose"] = json!("aiAdminHistory");
+                        value["llmn_chat_revisions"] = body["chatRevisions"].clone();
+                        value["llmn_audience_revision"] = body["audienceRevision"].clone();
                         value
                     },
                 },
             )
-            .await?;
+            .await;
+            if let Err(error) = result {
+                if !explicit
+                    && matches!(
+                        error.downcast_ref::<NodeError>(),
+                        Some(NodeError::Api {
+                            status: 403 | 409,
+                            ..
+                        })
+                    )
+                {
+                    // Keep this recipient pending without blocking other verified devices.
+                    continue 'admin;
+                }
+                return Err(error);
+            }
         }
         store.db.execute(
             "UPDATE crypto_admins SET fingerprint=?4 WHERE ai=?1 AND account=?2 AND device=?3",
@@ -2925,6 +3004,148 @@ mod tests {
                 .is_some()
         );
     }
+    #[tokio::test]
+    async fn admin_history_frozen_without_scope_never_enters_transport() {
+        let store = store();
+        initialize(&store).unwrap();
+        let ai = crate::id();
+        let directory = tempfile::tempdir().unwrap();
+        let s = Session {
+            device: Device::open(directory.path(), &ai, "AI", &[1; 32])
+                .await
+                .unwrap(),
+            ai,
+            router: Default::default(),
+        };
+        let request = Request {
+            device_id: "AI".into(),
+            request_id: "old".into(),
+            kind: "toDevice".into(),
+            body: json!({"llmn_purpose":"aiAdminHistory"}),
+        };
+        store
+            .db
+            .execute(
+                "INSERT INTO crypto_outbox VALUES(?1,?2,?3)",
+                params![
+                    s.ai,
+                    request.request_id,
+                    serde_json::to_string(&request).unwrap()
+                ],
+            )
+            .unwrap();
+        let api = NodeClient::new("http://127.0.0.1:1", "fixture", None).unwrap();
+        relay(&api, &store, &s, request).await.unwrap();
+        assert_eq!(
+            store
+                .db
+                .query_row("SELECT count(*) FROM crypto_outbox", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn admin_history_exports_chat_sessions_without_window_material() {
+        let directory = tempfile::tempdir().unwrap();
+        let ai = crate::id();
+        let cid = crate::id();
+        let departed = crate::id();
+        let source = Device::open(&directory.path().join("ai"), &ai, "AI", &[1; 32])
+            .await
+            .unwrap();
+        let recipient = Device::open(
+            &directory.path().join("admin"),
+            &crate::id(),
+            "ADMIN",
+            &[2; 32],
+        )
+        .await
+        .unwrap();
+        let room = room_id(&cid);
+        for name in [
+            room.clone(),
+            room_id(&departed),
+            resource_room(&ai, "memory", Some(&cid)),
+            resource_room(&ai, "summary", Some(&cid)),
+            resource_room(&ai, "summarySettings", Some(&cid)),
+            resource_room(&ai, "profile", None),
+        ] {
+            source
+                .machine()
+                .share_room_key(
+                    &llmn_crypto::ruma::RoomId::parse(name).unwrap(),
+                    std::iter::empty::<&llmn_crypto::ruma::UserId>(),
+                    llmn_crypto::matrix_sdk_crypto::EncryptionSettings::default(),
+                )
+                .await
+                .unwrap();
+        }
+        let chat = NodeConversation {
+            id: cid.clone(),
+            kind: "group".into(),
+            name: "chat".into(),
+            revision: "3".into(),
+            // The administrator is not a member of this window.
+            members: vec![NodeAccount {
+                id: ai.clone(),
+                name: "AI".into(),
+                bio: String::new(),
+                kind: "ai".into(),
+            }],
+            encryption: Some(ConversationEncryption {
+                version: 1,
+                activation_position: "0".into(),
+                history_complete: true,
+            }),
+        };
+        let mut former = chat.clone();
+        former.id = departed;
+        former.members.clear();
+        let history = admin_chat_history(&source, &ai, &[former, chat], "roster-1")
+            .await
+            .unwrap();
+        assert_eq!(history["chatRevisions"], json!({cid.as_str():"3"}));
+        let keys: Vec<llmn_crypto::matrix_sdk_crypto::olm::ExportedRoomKey> =
+            serde_json::from_value(history["keys"].clone()).unwrap();
+        assert_eq!(keys.len(), 1);
+        recipient
+            .machine()
+            .store()
+            .import_exported_room_keys(keys, |_, _| {})
+            .await
+            .unwrap();
+        let available = recipient
+            .machine()
+            .store()
+            .export_room_keys(|_| true)
+            .await
+            .unwrap();
+        assert_eq!(available.len(), 1);
+        assert_eq!(available[0].room_id.as_str(), room);
+        let event = json!({"type":"m.room.encrypted","room_id":room,"sender":user_id(&ai),"event_id":"$test","origin_server_ts":0,"content":source.seal(&cid,"com.llmn.content.v1",&json!({"text":"chat history"})).await.unwrap()});
+        let opened = recipient
+            .machine()
+            .decrypt_room_event(
+                &llmn_crypto::ruma::serde::Raw::new(&event)
+                    .unwrap()
+                    .cast_unchecked(),
+                &llmn_crypto::ruma::RoomId::parse(room).unwrap(),
+                &llmn_crypto::matrix_sdk_crypto::DecryptionSettings {
+                    sender_device_trust_requirement:
+                        llmn_crypto::matrix_sdk_crypto::TrustRequirement::Untrusted,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(opened.event.json().get()).unwrap()["content"]
+                ["text"],
+            "chat history"
+        );
+    }
+
     #[tokio::test]
     async fn group_history_import_rejects_foreign_rooms_and_ignores_stale_rosters() {
         let store = store();

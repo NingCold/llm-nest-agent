@@ -20,6 +20,7 @@ use crate::stream::ChatStream;
 type RouteKey = (ProviderId, Protocol);
 /// Catalog-backed adapter table.
 type RouteTable = HashMap<RouteKey, Arc<dyn AiProvider>>;
+type LegacyRoute = std::result::Result<Arc<dyn AiProvider>, String>;
 
 #[derive(Clone)]
 pub struct AiClient {
@@ -30,7 +31,7 @@ pub struct AiClient {
     routes: Arc<RwLock<RouteTable>>,
     /// Legacy/manual routes keyed by provider id ([`AiClient::register`]),
     /// used only while no catalog is mounted.
-    legacy: Arc<RwLock<HashMap<ProviderId, Arc<dyn AiProvider>>>>,
+    legacy: Arc<RwLock<HashMap<ProviderId, LegacyRoute>>>,
     catalog: Arc<RwLock<Option<ModelRouter>>>,
     /// Source configuration snapshot; the catalog/routes are rebuilt from it
     /// on reload and on `/models` refresh.
@@ -53,16 +54,20 @@ impl AiClient {
     /// full routing.
     pub fn register(&self, id: ProviderId, provider: Arc<dyn AiProvider>) {
         let mut legacy = self.legacy.blocking_write();
-        legacy.insert(id, provider);
+        legacy.insert(id, Ok(provider));
     }
 
     /// OpenAI-compatible endpoint (legacy quickstart, no model catalog).
     pub fn openai_compat(name: impl Into<ProviderId>, base_url: &str, api_key: &str) -> Self {
-        let client = Self::new();
+        let mut client = Self::new();
         let id = name.into();
         let provider = OpenAIProvider::new(id.0.clone(), base_url, api_key.to_string())
-            .expect("failed to build OpenAI-compatible provider");
-        client.register(id, Arc::new(provider));
+            .map(|p| Arc::new(p) as Arc<dyn AiProvider>)
+            .map_err(|e| match e {
+                AiError::ConfigError(message) => message,
+                other => other.to_string(),
+            });
+        client.legacy = Arc::new(RwLock::new(HashMap::from([(id, provider)])));
         client
     }
 
@@ -250,7 +255,8 @@ impl AiClient {
                     .collect::<Vec<_>>()
                     .join(", ");
                 AiError::ProviderNotFound(selection.provider.clone(), available)
-            })
+            })?
+            .map_err(AiError::ConfigError)
     }
 
     /// Copy all routing state under the same read transaction. A run can keep
@@ -456,6 +462,19 @@ mod tests {
                 Err(AiError::ImageInputUnsupported)
             ));
         }
+    }
+
+    #[tokio::test]
+    async fn legacy_endpoint_reports_a_configuration_error_when_routed() {
+        let client = AiClient::openai_compat("sample", "http://model.example", "");
+        let route = client
+            .route(&ModelSelection {
+                provider: "sample".into(),
+                model: "m".into(),
+                reasoning_effort: None,
+            })
+            .await;
+        assert!(matches!(route,Err(AiError::ConfigError(message)) if message.contains("HTTPS")));
     }
 
     #[tokio::test]

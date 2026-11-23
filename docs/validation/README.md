@@ -22,7 +22,7 @@ python scripts/test_clean_build_artifacts.py
 
 发布程序使用 `scripts/package-agent.py` 核对 --version，并由 `scripts/merge-agent-artifacts.py` 合并同版两平台的 manifest、验证实际程序 SHA-256、生成 SHA256SUMS.txt。release workflow 的普通手动运行不填 release_tag 时只生成14天临时 Actions 验收产物，没有正式下载 URL，也不会创建 Release。
 
-推送版本 tag 或手动输入已有 `release_tag` 时，流程 checkout 该 tag，核对 HEAD、tag 与本仓版本，再生成同时覆盖 Windows/Linux 的 agent-manifest.json。其 HTTPS 下载地址固定到该版本 tag，不使用 latest；仅最后的可选 job 获得 contents:write，并创建或更新草稿 Release，不创建 tag，不覆盖已公开 Release。维护者核对验收和许可证后手动公开，正式 URL 才可下载；客户端发布应引用公开后可长期下载的双平台清单，不能引用14天 Actions artifact。
+推送版本 tag 或手动输入已有 `release_tag` 时，流程先核对 tag 与源码版本，再用同一提交构建 Windows、Linux 两个平台。合并任务上传 `agent-release-assets`；创建草稿前再次检查 tag 是否仍指向实际构建提交。其 HTTPS 下载地址固定到该版本 tag，不使用 latest；仅最后的可选 job 获得 contents:write，并创建或更新草稿 Release，不创建 tag，不覆盖已公开 Release。维护者核对验收和许可证后手动公开，正式 URL 才可下载；客户端发布应引用公开后可长期下载的双平台清单，不能引用14天 Actions artifact。
 
 第三方许可材料由 cargo-about 0.9.3 按 Windows/Linux 目标的锁定依赖生成，发布包要求同时提供程序、第三方声明、LICENSE 与 NOTICE。`test_package_agent.py` / `test_merge_agent_artifacts.py` 校验声明原文、摘要、固定地址及篡改拒绝。
 

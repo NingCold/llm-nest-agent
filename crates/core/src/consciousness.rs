@@ -183,27 +183,34 @@ impl ConsciousnessService {
             });
         }
         used += memory_cost;
-        let all_original_cost: u32 = material
-            .messages
-            .iter()
-            .filter(|m| {
+        let optional_history = || {
+            material.messages.iter().filter(|m| {
                 Some(m.id) != trigger.map(|t| t.id)
                     && Some(m.id) != quoted.map(|m| m.id)
                     && !material.required_message_ids.contains(&m.id)
             })
-            .map(|m| estimate(&render(m, material.contact.actor.id, None)))
-            .sum();
-        let earliest = material
-            .messages
-            .iter()
-            .map(|m| m.sequence)
-            .min()
-            .unwrap_or(Sequence::ZERO);
-        let needs_summary = used.saturating_add(all_original_cost) > input_limit
-            || material
+        };
+        // Without summaries there is no selection decision to make. In particular,
+        // do not clone and render every historical image just to sum its cost.
+        let needs_summary = !material.summaries.is_empty() && {
+            let earliest = material
+                .messages
+                .iter()
+                .map(|m| m.sequence)
+                .min()
+                .unwrap_or(Sequence::ZERO);
+            material
                 .summaries
                 .iter()
-                .any(|s| s.from_sequence < earliest);
+                .any(|s| s.from_sequence < earliest)
+                || {
+                    let mut total = u64::from(used);
+                    optional_history().any(|m| {
+                        total += u64::from(estimate(&render(m, material.contact.actor.id, None)));
+                        total > u64::from(input_limit)
+                    })
+                }
+        };
         let mut summary_messages = Vec::new();
         let mut selected_summaries = Vec::new();
         let mut summary_cost = 0;
@@ -233,11 +240,7 @@ impl ConsciousnessService {
             }
             used += summary_cost;
         }
-        for message in material.messages.iter().rev().filter(|m| {
-            Some(m.id) != trigger.map(|t| t.id)
-                && Some(m.id) != quoted.map(|m| m.id)
-                && !material.required_message_ids.contains(&m.id)
-        }) {
+        for message in optional_history().rev() {
             if selected_summaries.iter().any(|s| {
                 s.sources.iter().any(|source| {
                     matches!(source, SourceRef::Message { message_id, revision, .. }

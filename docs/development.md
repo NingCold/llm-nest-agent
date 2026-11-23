@@ -8,7 +8,7 @@ cargo run -p agent-node -- catalog
 python scripts/check-boundaries.py
 ```
 
-五个工作区包位于 `node/` 与 `crates/`。social/connector 从服务端固定 Git revision 读取，锁文件维护已验证依赖版本，不使用其他仓库的源码路径。三仓均已公开，依赖从正式 GitHub 地址读取；当前 social/connector 固定在同一提交 [`f47f9b4a99ba8602b7992b53d22bacf08534a64c`](https://github.com/NingCold/llm-nest-server/commit/f47f9b4a99ba8602b7992b53d22bacf08534a64c)。
+五个工作区包位于 `node/` 与 `crates/`。[social](https://github.com/NingCold/llm-nest-server/tree/f47f9b4a99ba8602b7992b53d22bacf08534a64c/crates/social) 提供社交类型，[connector](https://github.com/NingCold/llm-nest-connect) 提供节点通信协议。两个依赖分别在 [Cargo.toml](../Cargo.toml) 中固定 Git 提交，Cargo.lock 锁定实际来源。
 
 ## 模块入口
 
@@ -24,7 +24,7 @@ python scripts/check-boundaries.py
 
 ## 发布产物
 
-当前源码版本为 `0.1.1-alpha.14`，尚未发布；已公开版本为 [0.1.1-alpha.13](https://github.com/NingCold/llm-nest-agent/releases/tag/v0.1.1-alpha.13)，Agent 版本由本仓 Cargo.toml 独立维护。发布流程支持已有版本 tag；手动运行填写 release_tag 时构建该 tag，经版本和提交核验后生成双平台程序、统一 manifest、SHA256SUMS.txt 和草稿 Release。只有维护者公开草稿后，固定 tag URL 才可供客户端正式消费。不填写 tag 时仅生成临时验收产物。流程不替维护者创建 tag 或自动公开版本，见[验证说明](validation/README.md)。
+Agent 版本由本仓 [Cargo.toml](../Cargo.toml) 维护，已发布版本见 [Releases](https://github.com/NingCold/llm-nest-agent/releases)。发布流程支持已有版本 tag；手动运行填写 release_tag 时构建该 tag，经版本和提交核验后生成双平台程序、统一 manifest、SHA256SUMS.txt 和草稿 Release。只有维护者公开草稿后，固定 tag URL 才可供客户端正式消费。不填写 tag 时仅生成临时验收产物。流程不替维护者创建 tag 或自动公开版本，见[验证说明](validation/README.md)。
 
 Windows MSVC 的 `llmn-agent` 由 `node/build.rs` 显式保留 2 MiB 主线程栈，以容纳 Matrix SDK 调试构建中的 Olm 接收链。仅该二进制使用 `/STACK:2097152`，初始提交量仍为链接器默认 4096 字节；不设置全局 Rust 栈环境变量，不改变其他平台或后台任务的栈配置。
 

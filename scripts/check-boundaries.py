@@ -11,12 +11,17 @@ def main():
     members = {"node", "crates/common", "crates/ai-client", "crates/core", "crates/crypto"}
     assert set(workspace["members"]) == members, "Agent workspace must contain exactly five packages"
     dependencies = workspace["dependencies"]
-    social, connector = (dependencies[name] for name in ("social", "connector"))
-    for dependency in (social, connector):
-        assert dependency["git"] == "https://github.com/NingCold/llm-nest-server.git"
-        assert re.fullmatch(r"[0-9a-f]{40}", dependency["rev"]), "Exact server revision required"
+    lock = tomllib.loads((ROOT / "Cargo.lock").read_text(encoding="utf-8"))
+    for name, repo in (("social", "llm-nest-server"), ("connector", "llm-nest-connect")):
+        dependency = dependencies[name]
+        url = f"https://github.com/NingCold/{repo}.git"
+        assert dependency["git"] == url
+        revision = dependency["rev"]
+        assert re.fullmatch(r"[0-9a-f]{40}", revision), f"Exact {repo} revision required"
         assert not {"path", "branch", "tag"} & dependency.keys()
-    assert social["rev"] == connector["rev"], "Protocol packages must share a revision"
+        assert [p.get("source") for p in lock["package"] if p["name"] == name] == [
+            f"git+{url}?rev={revision}#{revision}"
+        ], f"Locked {name} source must match its declared revision"
     forbidden = {"runtime", "storage", "social-feature", "web-server", "cloud-server", "tauri-frontend", "tools"}
     for member in sorted(members):
         manifest = ROOT / member / "Cargo.toml"

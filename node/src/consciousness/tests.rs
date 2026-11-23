@@ -487,6 +487,18 @@ async fn segmentation_paginates_preserves_latest_twelve_caps_thirtytwo_and_owns_
             .any(|p| p.contains("after=100"))
     );
     store.save_summary(&ai, &c.id, &seg).unwrap();
+    let requests = paths.lock().unwrap().len();
+    assert!(
+        make_segment(&api, &store, &cfg, &ai, &c, &operator, None, false)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        paths.lock().unwrap().len(),
+        requests,
+        "a queued summary must not reread history"
+    );
     assert!(store.summaries(&uid(), &c.id).unwrap().is_empty());
     server.abort();
     let (api, server, _) = mock(c.clone(), (1..=20).map(message).collect(), false).await;

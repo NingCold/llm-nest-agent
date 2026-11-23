@@ -116,8 +116,11 @@ api_key = {{ env = "API_KEY_CHATECNU" }}
             | "crypto-migration-preview"
             | "crypto-migrate"
     ) {
+        if !matches!(command, "help" | "--help" | "-h") {
+            bail!("Unknown command: {command}. Use llmn-agent --help for available commands.");
+        }
         println!(
-            "llmn-agent init|pair|pair-json|check|run|run-managed|status|stop [directory]; profile <directory> <AI id> <profile.json>; export-ai <directory> <AI id> <output.json>; preview-import-ai|import-ai <directory> <AI id> <package.json> <expected-profile-revision>; crypto-init|crypto-status <directory> <AI id>; crypto-export-recovery|crypto-recover <directory> <AI id> <recovery.json>; crypto-trust <directory> <AI id> <account id> <device id> <Ed25519> <Curve25519> <master key>; crypto-migration-preview <directory> <AI id>; crypto-migrate <directory> <AI id> <preview digest>; crypto-authorize-admin <directory> <AI id> <account id> <device id>"
+            "llmn-agent --version | catalog | init|pair|pair-json|check|run|run-managed|status|stop [directory]; profile <directory> <AI id> <profile.json>; export-ai <directory> <AI id> <output.json>; preview-import-ai|import-ai <directory> <AI id> <package.json> <expected-profile-revision>; crypto-init <directory> <AI id>; crypto-status <directory> <AI id> [<account id> <device id>]; crypto-export-recovery|crypto-recover <directory> <AI id> <recovery.json>; crypto-trust <directory> <AI id> <account id> <device id> <Ed25519> <Curve25519> <master key>; crypto-migration-preview <directory> <AI id>; crypto-migrate <directory> <AI id> <preview digest>; crypto-authorize-admin <directory> <AI id> <account id> <device id>"
         );
         return Ok(());
     }

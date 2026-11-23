@@ -96,3 +96,23 @@ api_key={env="UNSET_CATALOG_TEST_KEY"}
     assert!(String::from_utf8_lossy(&output.stderr).contains("missing-model"));
     assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
 }
+
+#[test]
+fn unknown_command_fails_while_help_succeeds_without_creating_a_node() {
+    let directory = tempfile::tempdir().unwrap();
+    let invoke = |arg: &str| {
+        Command::new(env!("CARGO_BIN_EXE_llmn-agent"))
+            .arg(arg)
+            .current_dir(directory.path())
+            .env_clear()
+            .output()
+            .unwrap()
+    };
+    let typo = invoke("staus");
+    assert!(!typo.status.success());
+    assert!(String::from_utf8_lossy(&typo.stderr).contains("staus"));
+    let help = invoke("--help");
+    assert!(help.status.success());
+    assert!(String::from_utf8_lossy(&help.stdout).contains("crypto-status"));
+    assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 0);
+}

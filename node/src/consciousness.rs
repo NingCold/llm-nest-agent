@@ -784,12 +784,6 @@ async fn make_segment(
     if !manual && !settings.enabled {
         return Ok(None);
     }
-    let mut history = full_history(api, &c.id).await?;
-    crate::crypto::decrypt_history(api, store, ai, &mut history).await?;
-    ensure!(
-        history.conversation.revision == c.revision,
-        "source_changed"
-    );
     let records = store.summaries(ai, &c.id)?;
     if records
         .iter()
@@ -815,35 +809,42 @@ async fn make_segment(
             "summary_not_retryable"
         );
     }
-    let through = records
-        .iter()
-        .map(|r| r.item.through_position.parse::<u64>())
-        .collect::<std::result::Result<Vec<_>, _>>()?
-        .into_iter()
-        .max()
-        .unwrap_or(0);
+    let mut history = full_history(api, &c.id).await?;
+    crate::crypto::decrypt_history(api, store, ai, &mut history).await?;
+    ensure!(
+        history.conversation.revision == c.revision,
+        "source_changed"
+    );
+    let through = records.iter().try_fold(0_u64, |max, r| {
+        Ok::<_, std::num::ParseIntError>(max.max(r.item.through_position.parse()?))
+    })?;
     let boundary = history
         .recent_boundary
         .as_deref()
         .map(str::parse::<u64>)
         .transpose()?
         .unwrap_or(0);
-    let mut messages = history
-        .messages
-        .into_iter()
-        .filter(|m| {
-            let pos = m.position.parse::<u64>().expect("cloud position");
-            if let Some(previous) = &previous {
-                previous.item.sources.iter().any(|s| s.message_id == m.id)
-            } else {
-                pos > through && pos < boundary
+    let mut messages = Vec::new();
+    for message in history.messages {
+        let pos = message.position.parse::<u64>()?;
+        let eligible = match &previous {
+            Some(record) => record
+                .item
+                .sources
+                .iter()
+                .any(|s| s.message_id == message.id),
+            None => pos > through && pos < boundary,
+        };
+        if eligible {
+            messages.push(message);
+            if messages.len() == 32 {
+                break;
             }
-        })
-        .collect::<Vec<_>>();
+        }
+    }
     if messages.is_empty() || !manual && messages.len() < 16 {
         return Ok(None);
     }
-    messages.truncate(32);
     let router = ModelRouter::new(&config.providers)?;
     let (resolved, _) = summary_options(&router, &binding)?;
     while previous.is_none() && messages.len() > 1 {

@@ -1,6 +1,6 @@
 # LLM-Nest Agent 工作约定
 
-本仓维护独立的 `llmn-agent`。[模块入口](docs/development.md#模块入口)列出节点、模型接入、上下文与加密模块的职责。social 和 connector 使用服务端同一固定 Git 提交，不复制源码，也不通过兄弟目录或 submodule 引入。
+本仓维护独立的 `llmn-agent`。[模块入口](docs/development.md#模块入口)列出节点、模型接入、上下文与加密模块的职责。social 与 connector 分别固定到服务端和独立连接器仓库的 Git 提交，不复制源码，也不通过兄弟目录或 submodule 引入。
 
 ## 协作与验证
 

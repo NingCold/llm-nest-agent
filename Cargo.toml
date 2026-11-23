@@ -5,7 +5,7 @@ members = ["crates/common", "crates/ai-client", "crates/core", "crates/crypto", 
 [workspace.package]
 license = "Apache-2.0"
 repository = "https://github.com/NingCold/llm-nest-agent"
-version = "0.1.1-alpha.14"
+version = "0.1.2"
 edition = "2024"
 
 [workspace.dependencies]
@@ -38,5 +38,5 @@ rev = "f47f9b4a99ba8602b7992b53d22bacf08534a64c"
 path = "crates/core"
 
 [workspace.dependencies.connector]
-git = "https://github.com/NingCold/llm-nest-server.git"
-rev = "f47f9b4a99ba8602b7992b53d22bacf08534a64c"
+git = "https://github.com/NingCold/llm-nest-connect.git"
+rev = "fc195d9ad2b541123b70b6a4a8ab02719c3a2e36"

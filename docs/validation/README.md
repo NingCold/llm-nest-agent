@@ -7,6 +7,7 @@
 ```sh
 cargo fmt --all -- --check
 python scripts/check-boundaries.py
+python scripts/test_license_config.py
 python scripts/test_package_agent.py
 python scripts/test_merge_agent_artifacts.py
 cargo build --workspace --locked

@@ -8,3 +8,48 @@ ignore-build-dependencies = false
 ignore-dev-dependencies = true
 ignore-transitive-dependencies = false
 workarounds = ["chrono", "rustix", "linux-raw-sys", "unicode-ident"]
+
+# Missing from these crate archives: retrieve LICENSE at each package's
+# .cargo_vcs_info.json revision; verify the reviewed upstream bytes.
+
+[decancer.clarify]
+license = "MIT"
+[[decancer.clarify.git]]
+path = "LICENSE"
+checksum = "bbbb3f5f5cb288d63dad6e80ab04eab6c07f28643b79b9c447f629a6f8b37fe7"
+
+[ruma-client-api.clarify]
+license = "MIT"
+[[ruma-client-api.clarify.git]]
+path = "LICENSE"
+checksum = "89807acf2309bd285f033404ee78581602f3cd9b819a16ac2f0e5f60ff4a473e"
+
+[ruma-common.clarify]
+license = "MIT"
+[[ruma-common.clarify.git]]
+path = "LICENSE"
+checksum = "89807acf2309bd285f033404ee78581602f3cd9b819a16ac2f0e5f60ff4a473e"
+
+[ruma-events.clarify]
+license = "MIT"
+[[ruma-events.clarify.git]]
+path = "LICENSE"
+checksum = "89807acf2309bd285f033404ee78581602f3cd9b819a16ac2f0e5f60ff4a473e"
+
+[ruma-identifiers-validation.clarify]
+license = "MIT"
+[[ruma-identifiers-validation.clarify.git]]
+path = "LICENSE"
+checksum = "89807acf2309bd285f033404ee78581602f3cd9b819a16ac2f0e5f60ff4a473e"
+
+[ruma-macros.clarify]
+license = "MIT"
+[[ruma-macros.clarify.git]]
+path = "LICENSE"
+checksum = "89807acf2309bd285f033404ee78581602f3cd9b819a16ac2f0e5f60ff4a473e"
+
+[ruma.clarify]
+license = "MIT"
+[[ruma.clarify.git]]
+path = "LICENSE"
+checksum = "89807acf2309bd285f033404ee78581602f3cd9b819a16ac2f0e5f60ff4a473e"

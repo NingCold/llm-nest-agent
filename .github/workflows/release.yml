@@ -63,6 +63,7 @@ jobs:
           echo "$GITHUB_WORKSPACE/cargo-about-bin" >> "$GITHUB_PATH"
       - run: |
           python scripts/check-boundaries.py
+          python scripts/test_license_config.py
           python scripts/test_package_agent.py
           python scripts/test_merge_agent_artifacts.py
           cargo test --workspace --locked

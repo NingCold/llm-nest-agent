@@ -17,7 +17,10 @@ def package(binary, output, version, target, notices, url=None):
     if url and not url.startswith('https://'):
         raise ValueError('Published artifact URL must use HTTPS')
     notice_bytes = notices.read_bytes()
-    if not notice_bytes.decode('utf-8').strip():
+    notice_text = notice_bytes.decode('utf-8')
+    if re.search(r'^Copyright[^\r\n]*(?:<copyright holders>|\[fullname\])', notice_text, re.M | re.I):
+        raise ValueError('Unresolved placeholder copyright in third-party notices; review cargo-about clarification inputs')
+    if not notice_text.strip():
         raise ValueError('Third-party notices must be nonempty UTF-8 text')
     license_root = Path(__file__).resolve().parents[1]
     own_licenses = {name: (license_root / name).read_bytes() for name in ('LICENSE', 'NOTICE')}

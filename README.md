@@ -29,4 +29,4 @@
 
 [客户端](https://github.com/NingCold/llm-nest)提供聊天与桌面托管，[服务端](https://github.com/NingCold/llm-nest-server)提供账号、社交和任务调度。Agent 独立发版，使用协议 v4 / sealedV1。
 
-项目代码采用 [Apache-2.0](LICENSE)，第三方组件保留各自许可。
+本仓自有代码采用 [Apache-2.0](LICENSE)，版权声明见 [NOTICE](NOTICE)。第三方组件保留各自的许可证与署名。

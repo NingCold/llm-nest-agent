@@ -30,7 +30,9 @@ Windows MSVC 的 `llmn-agent` 由 `node/build.rs` 显式保留 2 MiB 主线程�
 
 ## 第三方声明
 
-发布使用固定的 cargo-about 0.9.3，按目标平台与锁文件生成完整许可正文和源码定位；配置与纯文本模板在 `scripts/licenses/`。开发依赖排除，构建依赖及传递依赖保留。正式生成不能使用 `--offline`，以免上游 crate 省略 LICENSE 时只得到缺版权信息的标准文本。任何无法判定的许可均使生成失败，不能跳过该包。
+cargo-about 0.9.3 按锁文件和目标平台生成运行、构建及其传递依赖的许可正文和源码地址，排除开发依赖。发布时需联网：decancer 与 ruma 的 crate 归档缺少 LICENSE，工具从归档记录的源码提交取回原文，并按 [about.toml](../scripts/licenses/about.toml) 校验 SHA-256。
+
+[声明模板](../scripts/licenses/third-party-notices.hbs) 为带独立 COPYRIGHT 的组件附上原文与来源。未识别的许可会中止生成；未填写的版权占位行会中止打包。
 
 ```sh
 cargo-about generate --manifest-path node/Cargo.toml --target x86_64-pc-windows-msvc --locked --fail --config scripts/licenses/about.toml --output-file agent-notices.txt scripts/licenses/third-party-notices.hbs

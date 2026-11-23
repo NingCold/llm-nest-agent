@@ -1,18 +1,71 @@
 # 节点操作与命令
 
-以下 `cargo run` 命令在仓库根目录运行；下载程序可将 `cargo run -p agent-node --` 替换为 `llmn-agent`。
+## 首次运行
 
-`llmn-agent --version` 输出程序版本；`llmn-agent catalog` 输出内置模型目录 JSON，包含 `protocolVersion: 1`、`agentVersion` 和 `providers`。这两个命令不读取配置、密钥或节点目录，不联网，也不创建节点数据。目录中的模型由 Agent 维护；实际节点配置仍由 `check <directory>` 严格校验。
+以下使用[公开下载](../README.md#下载)的程序。节点目录须尚不存在；从源码构建则按[开发指南](development.md)，Windows 程序为 `target/debug/llmn-agent.exe`，Linux 为 `target/debug/llmn-agent`，用其绝对路径替换下面的程序变量。
+
+### 1. 初始化
+
+Windows PowerShell（按实际下载位置修改 `$agentExe`）：
 
 ```powershell
-cargo run -p agent-node -- init C:\private\llmn-agent
-cargo run -p agent-node -- pair C:\private\llmn-agent
-cargo run -p agent-node -- run C:\private\llmn-agent
+$agentExe = "$HOME\Downloads\llmn-agent-0.1.1-alpha.13-x86_64-pc-windows-msvc.exe"
+$nodeDirectory = "$HOME\.llmn-agent"
+& $agentExe --version
+& $agentExe init $nodeDirectory
 ```
 
-初始化后编辑 `node.toml` 的 `server`；使用私有 CA 时在文件顶层加入 `ca_file = "C:/private/ca.pem"`。HTTPS 与 WSS 都验证证书，仅本机开发允许 HTTP。把模型 Key 留在 `API_KEY_CHATECNU` 环境变量；配置仅接受环境变量引用。初始化目录设置当前用户私有权限，SQLite 中的节点凭据不可分享、提交或打包。
+Linux shell，在下载目录运行：
 
-`pair` 显示一次性配对码，在“我的账号 → 我管理的 AI”选择 AI 授权。重复运行 `pair` 可绑定其他 AI，同一目录的所有 AI 由 `run` 运行。中断的待授权配对会继续使用原码，过期自动申请新码。
+```sh
+chmod u+x ./llmn-agent-0.1.1-alpha.13-x86_64-unknown-linux-gnu
+agent_exe="$PWD/llmn-agent-0.1.1-alpha.13-x86_64-unknown-linux-gnu"
+node_directory="$HOME/.llmn-agent"
+"$agent_exe" --version
+"$agent_exe" init "$node_directory"
+```
+
+### 2. 配置模型并检查
+
+编辑节点目录中的 `node.toml`，将 `server` 改为试用站地址，配置供应商与模型。Key 仅接受环境变量引用，初始化模板使用 `API_KEY_CHATECNU`；更换供应商时同步修改引用，并确保运行进程继承该环境变量，Key 不写入命令行或配置正文。配置格式见[模型配置](configuration.md)。
+
+HTTPS/WSS 验证证书；私有 CA 在文件顶层设置 `ca_file = "C:/private/ca.pem"`，仅本机开发允许 HTTP。初始化目录仅当前用户可访问，其中的凭据、SQLite 与加密材料应单独备份，不可分享、提交或打包。
+
+Windows：
+
+```powershell
+& $agentExe check $nodeDirectory
+```
+
+Linux：
+
+```sh
+"$agent_exe" check "$node_directory"
+```
+
+### 3. 配对并准备加密
+
+Windows：
+
+```powershell
+& $agentExe pair $nodeDirectory
+```
+
+Linux：
+
+```sh
+"$agent_exe" pair "$node_directory"
+```
+
+在客户端“我的账号 → 我管理的 AI”选择 AI，输入一次性配对码并授权，等待命令完成。中断的待授权配对继续使用原码，过期自动申请新码；再次运行 `pair` 可绑定其他 AI，同一目录由一个 `run` 运行。
+
+**此时保持节点停止，继续[加密设备与资料](#加密设备与资料)的身份、恢复文件和双方信任步骤，再启动并发送首条消息。** 内网试用站要求新内容加密。
+
+## 档案与执行
+
+以下开发命令在仓库根目录执行；下载程序可将 `cargo run -p agent-node --` 替换为程序路径。
+
+`--version` 输出程序版本；`catalog` 输出内置模型目录 JSON（`protocolVersion: 1`、`agentVersion`、`providers`）。两者不读配置、Key 或节点目录，不联网或创建节点数据。`check <directory>` 无网络严格校验配置，不读取 Key 值。
 
 `node.toml` 的 `providers` 使用 `ai-client` 的供应商与模型配置格式，模型名称和推理强度严格校验。`profile` 是新绑定 AI 的模板，修改模板不会覆盖已经保存的 AI。每个 AI 的角色与模型参数分别保存，更新时提供 JSON：
 
@@ -48,13 +101,15 @@ cargo run -p agent-node -- profile C:\private\llmn-agent <AI-ID> C:\private\prof
 
 图片下载前先按元信息选材：保留所有合并输入、触发消息和被回复原文的必要图片，再从最近历史向前选取，最多 16 张、16 MiB。超过剩余预算的普通历史消息整条略去，保留的消息不单独丢图；必要图片超限会明确失败。实际下载长度还要匹配元信息。准备材料与下载期间继续处理 WSS 心跳和取消。
 
-本地无付费测试：`cargo test -p agent-node --locked`。模块入口见[节点模块](../node/README.md)。
+## 执行预算
 
 每轮按最终组装输入的保守估算加配置输出上限预留 `daily_tokens`。输入估算包括 UTF-8 字节、消息开销和图片估算，输出上限包含必要推理预算；`context_window` 用于检查请求容量，不按完整窗口预留。输入材料相同时，降低 `max_tokens` 会降低预留量，但仍须满足模型的必要推理要求。云端、同机聊天和摘要共用节点总额度，默认 `daily_tokens = 1048576`。这是软件内部的准入额度，不是供应商实际 Token 用量或账单。
 
 群自动接话与一次性约定另外按每个 AI、窗口、UTC 日预留同一份“本次输入估算加输出上限”额度，`profile.auto_daily_tokens` 可省略（默认 262144），范围 1024–4000000；可在桌面 AI 设置或该 AI 的 JSON 档案中独立调整。普通私聊和明确点名不扣这份自动额度，仍受节点顶层 `daily_calls/daily_tokens` 约束。两份额度与开始意图在同一 SQLite 事务预留；仅明确未开始的队列 409 同时释放它们，开始后失败、取消和重启不返还。预算拒绝区分 `token_limit`（窗口自动额度）、`node_call_limit`、`node_token_limit` 和 `budget_clock_rollback`。
 
 消息触发的 `inputIds` 均为必要材料，容量不足时明确失败。约定使用独立触发来源，把授权内容作为一次性约定提供给模型，可在聊天历史为空时执行；不会虚构真人消息，也不沿用共同群引用，当前窗口的有效记忆与摘要照常参与选材。
+
+## 在线管理与桌面托管
 
 在线配置管理通过 v4 `Hello.capabilities = ["profileManagement"]` 声明。云端仅转发角色、节点已经配置的模型选项及生成参数，响应不包含模型地址、Key 或环境变量名。管理员的写入由节点校验完整模型选择与参数，按预期版本原子保存；相同 requestId 重试只读取当前档案，回执仅存指纹。保存后的新任务使用新档案，已开始任务保持冻结设置。供应商和 Key 仍只能在节点本机配置。
 
@@ -64,30 +119,30 @@ cargo run -p agent-node -- profile C:\private\llmn-agent <AI-ID> C:\private\prof
 
 桌面节点以受限目录中的 `desktop-config.json` 为持久配置来源，配对和启动时会据此重建 `node.toml`，仅修改后者会被覆盖。当前源码中，进入 **我的账号 → 我管理的 AI → 在这台电脑上运行**，停止节点后展开 **每日调用额度**，可调整 **每日最多调用次数 / 每日 token 额度**；每个 AI 的设置可调整每窗口每日自动额度。
 
-### 加密设备与资料
+## 加密设备与资料
 
 私聊和群聊可开启加密。节点验证发送者身份后读取消息和附件，并将角色、模型、记忆和各窗口摘要作为密文同步；云端保存后，由当前节点另行确认应用。恢复文件和模型 Key 留在自己的设备。
 
 使用 `crypto-init <directory> <AI id>` 首次建立身份；已有云端身份时使用 `crypto-recover` 恢复。当前源码中，初始化中断后重试会继续使用同一身份与已有历史密钥备份；`crypto-status <directory> <AI id> [<对方账号 ID> <对方设备 ID>]` 查看已有状态，可同时检查指定设备是否受信任，不会创建身份。公开 alpha.13 的 `crypto-init` 遇到已有云端身份会拒绝，`crypto-status` 只支持节点目录和 AI ID，输出 `ready` 与设备指纹，并可能初始化本机 SDK 会话；它不提供源码版的身份准备、恢复保存及指定设备信任状态字段。两版均支持 `crypto-export-recovery`、`crypto-recover` 和 `crypto-trust`，参数顺序相同。`crypto-trust` 需独立核对账号 master、设备 Ed25519 和 Curve25519 指纹。`crypto-export-recovery` 保存私有恢复文件，换节点用 `crypto-recover` 恢复；仅登录或重新配对不能获得历史解密能力，当前不提供身份重置。向新管理员分享历史前，先确认当前管理员身份与设备信任，再用 `crypto-authorize-admin` 明确授权。恢复文件不提交、分享或交给服务管理员。参数与传输契约见[加密契约](https://github.com/NingCold/llm-nest-server/blob/main/docs/design/crypto-contract.md)，联调状态见[当前安排](https://github.com/NingCold/llm-nest/blob/main/docs/project/current.md)。
 
-当前客户端源码 `0.1.1-alpha.15` 配合 Agent 源码 `0.1.1-alpha.14`，可在 **我的账号 → 我管理的 AI → 在这台电脑上运行** 配对后进入 **完成加密 AI 设置**：准备首次身份或从恢复文件恢复，保存 AI 恢复文件，确认双方信任，保存角色与模型，然后启动 Agent。该入口及上面的预算改进尚未发布；公开安装版仍为 `0.1.1-alpha.13`。
+客户端 `0.1.1-alpha.15` 与 Agent `0.1.1-alpha.14` 已验收的设置流程：在 **我的账号 → 我管理的 AI → 在这台电脑上运行** 配对后进入 **完成加密 AI 设置**：准备首次身份或从恢复文件恢复，保存 AI 恢复文件，确认双方信任，保存角色与模型，然后启动 Agent。该入口及预算改进的验收记录见[2026-11-01 记录](validation/records.md#2026-11-01-源码与桌面验收)；公开安装版仍为 `0.1.1-alpha.13`。
 
 当前源码 `crypto-status` 的 `identityReady` 表示身份及历史密钥备份已准备，`recoverySaved` 表示已记录恢复文件保存或恢复准备；传入对方账号与设备后，`peerTrusted` 表示该设备是否通过本机信任检查。查看状态不会代为初始化或信任设备。
 
 公开安装版可使用随包 `agent/llmn-agent.exe`，独立节点使用下载或构建的程序，按以下步骤准备加密身份。内网试用站要求新内容加密，配对完成后须先完成这些准备：
 
 1. 等待配对完成；桌面用户停止本机 Agent，独立 CLI 用户先结束 `run`。以下所有 `crypto-*` 命令都需要独占节点目录，包括 `crypto-status`；运行或配对期间不能执行。
-2. 对已配对的节点目录执行 `crypto-init`，保存输出的 AI 设备 ID、Ed25519、Curve25519 和账号主指纹（`master.keys` 中的公钥值）。再用 `crypto-export-recovery` 将恢复文件保存到节点目录之外、仅当前用户可访问的私有目录；Windows 文件继承目标目录权限，先准备好受限目录。
+2. 首次使用时，对已配对的节点目录执行 `crypto-init`；换设备时改用 `crypto-recover <directory> <AI id> <recovery.json>` 恢复。保存输出的 AI 设备 ID、Ed25519、Curve25519 和账号主指纹（`master.keys` 中的公钥值）。再用 `crypto-export-recovery` 将恢复文件保存到节点目录之外、仅当前用户可访问的私有目录；Windows 文件继承目标目录权限，先准备好受限目录。
 3. 真人客户端打开 **我的账号 → 可信设备与恢复 → 本机设备 → 查看完整设备指纹**，将这里的真人账号主指纹、Ed25519 和 Curve25519 交给节点的 `crypto-trust`。反方向在真人页面查询 AI 账号，用第 2 步节点本机输出的三项指纹核对并信任。不要用服务器查询结果本身充当独立核对来源。
-4. 启动该节点（桌面启动或 CLI `run`），在客户端保存加密角色与模型，等待显示节点已应用。
+4. 完成以上准备后启动节点：桌面点击启动；独立节点 Windows 执行 `& $agentExe run $nodeDirectory`，Linux 执行 `"$agent_exe" run "$node_directory"`。在客户端保存加密角色与模型，等待显示节点已应用。
 5. 打开双方私聊，在聊天详情选择 **开启端到端加密**，再发送消息。此操作不会自动转换旧历史。
 
-以下路径和 ID 均为占位值；独立节点沿用起步步骤中的程序和节点目录变量，桌面用户替换为安装目录、桌面节点目录及实际账号资料。Linux 用 `"$agent_exe"` 和 `"$node_directory"` 执行同名命令：
+以下命令对应第 2–3 步，路径和 ID 均为占位值。独立节点沿用首次运行的程序和节点目录变量；桌面用户先将这两个变量设为安装程序路径和桌面节点目录。Linux 用 `"$agent_exe"` 和 `"$node_directory"` 执行同名命令：
 
 ```powershell
-$agentExe = "C:\path\to\LLM-Nest\agent\llmn-agent.exe"
-$nodeDirectory = "C:\path\to\desktop-node"
 & $agentExe crypto-init $nodeDirectory "<AI-ID>"
+# 换设备时不要执行 crypto-init，改为：
+# & $agentExe crypto-recover $nodeDirectory "<AI-ID>" "C:\private\llmn-recovery\ai-recovery.json"
 & $agentExe crypto-status $nodeDirectory "<AI-ID>"
 # 仅当前源码版可追加 "<真人账号ID>" "<真人设备ID>" 检查指定设备信任。
 & $agentExe crypto-export-recovery $nodeDirectory "<AI-ID>" "C:\private\llmn-recovery\ai-recovery.json"
@@ -98,7 +153,7 @@ $nodeDirectory = "C:\path\to\desktop-node"
 
 旧节点资料使用 `crypto-migration-preview <directory> <AI id>` 预览，再用 `crypto-migrate <directory> <AI id> <digest>` 转为云端密文资料。先备份、停止节点并完成身份和恢复准备；转换不会调用模型重写摘要，已有云端资料与遗忘记录优先。完整步骤见[迁移说明](https://github.com/NingCold/llm-nest-server/blob/main/docs/migration.md#现有云端记录转为加密)。迁移历史会保留原作者，并明确标为由迁移者转换的旧记录。
 
-### 同机文字私聊
+## 同机文字私聊
 
 `run-managed` 还提供只供桌面原生层使用的同机通道：Windows 使用命名管道，Unix 使用本机 socket，不监听公网或局域网端口。通道地址和认证 token 留在受限节点目录；模型 Key 和节点凭据不交给网页。普通 `run` 仍只运行原有云端任务，不开放这个通道。
 
@@ -107,6 +162,8 @@ $nodeDirectory = "C:\path\to\desktop-node"
 真人消息先在 `node.sqlite` 落盘，再返回发送确认。模型开始前保存执行材料和预算，定期保存片段；同一窗口的云端任务和本机回复共用串行控制，所有调用共用节点次数、token 预算与社交并发槽。停止或重启保留中断片段，已开始的调用不会自动重做。联网后后台补传已有结果，云端接纳历史不会再次启动模型；网络失败保留待同步，权限、来源或云端历史冲突则保留本机记录并明确提示冲突。
 
 同机私聊沿用云端相同的消息和加密格式，支持文字、密文附件、回复目标及已经准备好的群话题来源。先在线准备来源和附件，再断网接续；补传重新核对当前权限，只保存原结果。未启用窗口仍使用明文路径。不提供局域网连接或完整离线社交。桌面重启先联网核对登录会话，Windows 可选择保持登录；登录并解锁本机资料后，可恢复该账号已保存的同机窗口，不提供离线重新登录。
+
+## AI 资料迁移
 
 AI 资料迁移使用独立 JSON 包，不复制节点目录：
 

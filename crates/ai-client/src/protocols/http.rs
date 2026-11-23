@@ -121,9 +121,22 @@ mod tests {
     async fn model_directory_follows_only_same_origin_redirects() {
         use crate::ai_provider::AiProvider;
         use tokio::{
-            io::{AsyncReadExt, AsyncWriteExt},
-            net::TcpListener,
+            io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+            net::{TcpListener, TcpStream},
         };
+
+        async fn accept_request(listener: &TcpListener) -> TcpStream {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut reader = BufReader::new(stream);
+            let mut line = String::new();
+            loop {
+                line.clear();
+                assert!(reader.read_line(&mut line).await.unwrap() > 0);
+                if line == "\r\n" {
+                    return reader.into_inner();
+                }
+            }
+        }
 
         for same in [true, false] {
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -134,14 +147,11 @@ mod tests {
                 format!("http://localhost:{}/directory", addr.port())
             };
             let server = tokio::spawn(async move {
-                let mut request = [0u8; 1024];
-                let (mut stream, _) = listener.accept().await.unwrap();
-                stream.read(&mut request).await.unwrap();
+                let mut stream = accept_request(&listener).await;
                 stream.write_all(format!("HTTP/1.1 302 Found\r\nLocation: {destination}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").as_bytes()).await.unwrap();
                 drop(stream);
                 if same {
-                    let (mut stream, _) = listener.accept().await.unwrap();
-                    stream.read(&mut request).await.unwrap();
+                    let mut stream = accept_request(&listener).await;
                     stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 26\r\nConnection: close\r\n\r\n{\"data\":[{\"id\":\"sample\"}]}").await.unwrap();
                 }
             });
